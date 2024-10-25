@@ -1,4 +1,5 @@
 from PySide6 import QtWidgets
+import mistune
 
 
 class MessageWidget(QtWidgets.QFrame):
@@ -10,7 +11,7 @@ class MessageWidget(QtWidgets.QFrame):
         self.setLayout(layout)
 
         self.message = QtWidgets.QLabel()
-        self.message.setText(text)
+        self.set_text(text)
         self.message.setWordWrap(True)
         self.message.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
 
@@ -34,10 +35,8 @@ class MessageWidget(QtWidgets.QFrame):
         layout.addWidget(self.message)
 
     def append_text(self, text):
-        pre = self.message.text()
-        cur = pre + text
-        self.message.setText(cur)
-        # cursor = self.message.textCursor()
-        # cursor.movePosition(QtGui.QTextCursor.MoveOperation.End)
-        # cursor.insertText(text)
-        # self.message.setTextCursor(cursor)
+        self.set_text(self.markdown + text)
+
+    def set_text(self, text):
+        self.markdown = text
+        self.message.setText(mistune.html(text))

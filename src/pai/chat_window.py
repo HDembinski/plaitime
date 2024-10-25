@@ -1,5 +1,4 @@
 import json
-import threading
 from pathlib import Path
 
 import ollama as llm
@@ -125,24 +124,25 @@ class ChatWindow(QtWidgets.QMainWindow):
 
     def send_message(self):
         # Disable input while processing
-        self.input_box.setEnabled(False)
-        self.send_button.setEnabled(False)
 
         message_text = self.input_box.toPlainText().strip()
-        self.input_box.clear()
 
         if message_text:
+            self.input_box.clear()
+            self.input_box.setEnabled(False)
+            self.send_button.setEnabled(False)
+
             # Add user message
             self.add_message(message_text, True)
 
             # Create response widget with empty text
             response_widget = self.add_message("", False)
 
-            # Start response generation in a separate thread
-            thread = threading.Thread(
-                target=self.generate_response, args=(message_text, response_widget)
-            )
-            thread.start()
+            self.generate_response(message_text, response_widget)
+
+            # Re-enable input in the main thread
+            self.input_box.setEnabled(True)
+            self.send_button.setEnabled(True)
 
     def is_context_nearly_full(self, converstation_history):
         # estimate number of token
@@ -176,6 +176,7 @@ class ChatWindow(QtWidgets.QMainWindow):
                 stream=True,
                 options={"temperature": self.config["temperature"]},
             ):
+                QtCore.QCoreApplication.processEvents()
                 chunk = response["message"]["content"]
                 response_text += chunk
 
@@ -194,8 +195,3 @@ class ChatWindow(QtWidgets.QMainWindow):
             error_message += f"2. The model '{self.config['model']}' is available\n"
             error_message += "3. You can run 'ollama run modelname' in terminal"
             response_widget.append_text(error_message)
-
-        finally:
-            # Re-enable input in the main thread
-            self.input_box.setEnabled(True)
-            self.send_button.setEnabled(True)
