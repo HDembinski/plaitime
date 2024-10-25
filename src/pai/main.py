@@ -4,7 +4,8 @@ from PySide6 import QtGui, QtWidgets
 
 from pai.chat_window import ChatWindow
 
-if __name__ == "__main__":
+
+def main():
     app = QtWidgets.QApplication(sys.argv)
 
     # Set application-wide font

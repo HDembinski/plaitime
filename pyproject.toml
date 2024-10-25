@@ -17,6 +17,9 @@ classifiers = [
 ]
 dynamic = ["version"]
 
+[project.scripts]
+pai = "pai:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
