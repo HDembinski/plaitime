@@ -9,7 +9,6 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from pai import CONFIG_DEFAULT, CONFIG_FILE_NAME
 from pai.config_dialog import ConfigDialog
 from pai.message_widget import MessageWidget
-from pai.typing_indicator import TypingIndicator
 
 
 class ChatWindow(QtWidgets.QMainWindow):
@@ -50,11 +49,6 @@ class ChatWindow(QtWidgets.QMainWindow):
 
         scroll_area.setWidget(self.messages_widget)
         layout.addWidget(scroll_area)
-
-        # Create typing indicator
-        self.typing_indicator = TypingIndicator()
-        self.typing_indicator.hide()
-        self.messages_layout.addWidget(self.typing_indicator)
 
         # Create input area
         self.input_box = QtWidgets.QTextEdit()
@@ -123,37 +117,11 @@ class ChatWindow(QtWidgets.QMainWindow):
                 json.dump(conversation_data, f, indent=4)
 
     def load_conversation(self):
-        file_name, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self, "Load Conversation", "", "JSON Files (*.json)"
-        )
-        if file_name:
-            with open(file_name, "r") as f:
-                conversation_data = json.load(f)
-
-            # Clear current conversation
-            for i in reversed(
-                range(self.messages_layout.count() - 2)
-            ):  # -2 for stretch and typing indicator
-                widget = self.messages_layout.itemAt(i).widget()
-                if widget:
-                    widget.deleteLater()
-
-            # Load configuration
-            self.config = conversation_data.get("config", self.config)
-
-            # Load messages
-            self.conversation_history = conversation_data.get("messages", [])
-            for message in self.conversation_history:
-                if message["role"] != "system":
-                    self.add_message(
-                        message["content"], is_user=(message["role"] == "user")
-                    )
+        NotImplemented
 
     def add_message(self, text, is_user=True):
         message = MessageWidget(text, is_user)
-        insert_pos = (
-            self.messages_layout.count()
-        )  # Account for stretch and typing indicator
+        insert_pos = self.messages_layout.count()
         self.messages_layout.insertWidget(insert_pos, message)
         return message
 
@@ -172,9 +140,6 @@ class ChatWindow(QtWidgets.QMainWindow):
             # Add user message
             self.add_message(message_text, True)
 
-            # Show typing indicator
-            self.typing_indicator.start()
-
             # Create response widget with empty text
             response_widget = self.add_message("", False)
 
@@ -188,8 +153,6 @@ class ChatWindow(QtWidgets.QMainWindow):
         try:
             # Add user message to conversation history
             self.conversation_history.append({"role": "user", "content": user_input})
-
-            print(self.conversation_history)
 
             # Generate streaming response using Ollama
             response_text = ""
@@ -224,4 +187,3 @@ class ChatWindow(QtWidgets.QMainWindow):
             # Re-enable input in the main thread
             self.input_box.setEnabled(True)
             self.send_button.setEnabled(True)
-            self.typing_indicator.stop()
