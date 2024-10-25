@@ -10,6 +10,18 @@ from pai.config_dialog import ConfigDialog
 from pai.message_widget import MessageWidget
 
 
+class TextEdit(QtWidgets.QTextEdit):
+    def __init__(self, callback):
+        self.callback = callback
+        super().__init__()
+
+    def keyPressEvent(self, event):
+        if event.key() == QtCore.Qt.Key_Return:
+            self.callback()
+            return
+        super().keyPressEvent(event)
+
+
 class ChatWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
@@ -50,9 +62,10 @@ class ChatWindow(QtWidgets.QMainWindow):
         layout.addWidget(scroll_area)
 
         # Create input area
-        self.input_box = QtWidgets.QTextEdit()
+        self.input_box = TextEdit(self.send_message)
         self.input_box.setMaximumHeight(100)
         self.input_box.setPlaceholderText("Type your message here...")
+
         layout.addWidget(self.input_box)
 
         # Create send button
@@ -67,7 +80,7 @@ class ChatWindow(QtWidgets.QMainWindow):
         settings_menu = menubar.addMenu("Settings")
 
         # Configure LLM action
-        config_action = QtGui.QAction("Configure AI", self)
+        config_action = QtGui.QAction("Configure", self)
         config_action.triggered.connect(self.show_config_dialog)
         settings_menu.addAction(config_action)
 
@@ -143,6 +156,7 @@ class ChatWindow(QtWidgets.QMainWindow):
             # Re-enable input in the main thread
             self.input_box.setEnabled(True)
             self.send_button.setEnabled(True)
+            self.input_box.setFocus()
 
     def is_context_nearly_full(self, converstation_history):
         # estimate number of token
@@ -197,7 +211,7 @@ class ChatWindow(QtWidgets.QMainWindow):
             response_widget.append_text(error_message)
 
     def keyPressEvent(self, event):
-        if event.key() == QtCore.Key_Return:
+        if event.key() == QtCore.Qt.Key_Return:
             self.send_message()
             return
         super().keyPressEvent(event)
