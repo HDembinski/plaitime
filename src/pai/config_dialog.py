@@ -1,4 +1,5 @@
 from PySide6 import QtWidgets
+import ollama
 
 
 class ConfigDialog(QtWidgets.QDialog):
@@ -27,8 +28,17 @@ class ConfigDialog(QtWidgets.QDialog):
         params_widget = QtWidgets.QWidget()
         params_layout = QtWidgets.QFormLayout()
 
-        self.model = QtWidgets.QLineEdit()
-        self.model.setText(config["model"])
+        self.model = QtWidgets.QComboBox()
+        installed_models = []
+        for item in ollama.list()["models"]:
+            installed_models.append(item["name"].split(":")[0])
+        installed_models.sort()
+        self.model.addItems(installed_models)
+        i = self.model.findText(config["model"])
+        if i >= 0:
+            self.model.setCurrentIndex(i)
+        else:
+            self.model.addItem(config["model"])
 
         self.context_limit = QtWidgets.QSpinBox()
         self.context_limit.setRange(0, 1_000_000)
@@ -64,7 +74,7 @@ class ConfigDialog(QtWidgets.QDialog):
     def get_config(self):
         return {
             "system_prompt": self.system_prompt.toPlainText(),
-            "model": self.model.text(),
+            "model": self.model.currentText(),
             "context_limit": self.context_limit.value(),
             "temperature": self.temperature.value(),
         }
