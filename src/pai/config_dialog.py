@@ -27,16 +27,22 @@ class ConfigDialog(QtWidgets.QDialog):
         params_widget = QtWidgets.QWidget()
         params_layout = QtWidgets.QFormLayout()
 
+        self.model = QtWidgets.QLineEdit()
+        self.model.setText(config["model"])
+
+        self.context_limit = QtWidgets.QSpinBox()
+        self.context_limit.setRange(0, 1_000_000)
+        self.context_limit.setSingleStep(1000)
+        self.context_limit.setValue(config["context_limit"])
+
         self.temperature = QtWidgets.QDoubleSpinBox()
         self.temperature.setRange(0.0, 2.0)
         self.temperature.setSingleStep(0.1)
         self.temperature.setValue(config["temperature"])
 
-        self.model_name = QtWidgets.QLineEdit()
-        self.model_name.setText(config["model_name"])
-
+        params_layout.addRow("Model", self.model)
+        params_layout.addRow("Context Limit", self.context_limit)
         params_layout.addRow("Temperature", self.temperature)
-        params_layout.addRow("Model", self.model_name)
 
         params_widget.setLayout(params_layout)
         tabs.addTab(params_widget, "Parameters")
@@ -58,6 +64,7 @@ class ConfigDialog(QtWidgets.QDialog):
     def get_config(self):
         return {
             "system_prompt": self.system_prompt.toPlainText(),
+            "model": self.model.text(),
+            "context_limit": self.context_limit.value(),
             "temperature": self.temperature.value(),
-            "model_name": self.model_name.text(),
         }

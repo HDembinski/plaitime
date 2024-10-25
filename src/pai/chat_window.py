@@ -61,11 +61,6 @@ class ChatWindow(QtWidgets.QMainWindow):
         self.send_button.clicked.connect(self.send_message)
         layout.addWidget(self.send_button)
 
-        # # Add welcome message
-        # self.add_message(
-        #     "Welcome! Using Ollama with model: " + self.config["model_name"], False
-        # )
-
     def create_menu_bar(self):
         menubar = self.menuBar()
 
@@ -149,15 +144,34 @@ class ChatWindow(QtWidgets.QMainWindow):
             )
             thread.start()
 
-    def generate_response(self, user_input, response_widget):
-        try:
-            # Add user message to conversation history
-            self.conversation_history.append({"role": "user", "content": user_input})
+    def is_context_nearly_full(self, converstation_history):
+        # estimate number of token
+        num_char = 0
+        for message in converstation_history:
+            num_char += len(message["content"])
+        num_token = num_char / 4
+        return num_token > self.config.get(
+            "context_limit", CONFIG_DEFAULT["context_limit"]
+        )
 
+    def generate_response(self, user_input, response_widget):
+        # Add user message to conversation history
+        self.conversation_history.append({"role": "user", "content": user_input})
+
+        # enable endless chatting by clipping the conversation if it gets too long,
+        # while keeping the system prompt
+        while len(self.conversation_history) > 2 and self.is_context_nearly_full(
+            self.conversation_history
+        ):
+            self.conversation_history = (
+                self.conversation_history[:1] + self.conversation_history[3:]
+            )
+
+        try:
             # Generate streaming response using Ollama
             response_text = ""
             for response in llm.chat(
-                model=self.config["model_name"],
+                model=self.config["model"],
                 messages=self.conversation_history,
                 stream=True,
                 options={"temperature": self.config["temperature"]},
@@ -177,9 +191,7 @@ class ChatWindow(QtWidgets.QMainWindow):
             error_message = f"Error generating response: {str(e)}\n\n"
             error_message += "Please make sure:\n"
             error_message += "1. Ollama is installed and running\n"
-            error_message += (
-                f"2. The model '{self.config['model_name']}' is available\n"
-            )
+            error_message += f"2. The model '{self.config['model']}' is available\n"
             error_message += "3. You can run 'ollama run modelname' in terminal"
             response_widget.append_text(error_message)
 
