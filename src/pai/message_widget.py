@@ -9,9 +9,9 @@ class MessageWidget(QtWidgets.QFrame):
         layout = QtWidgets.QVBoxLayout()
         self.setLayout(layout)
 
-        self.message = QtWidgets.QTextEdit()
-        self.message.setReadOnly(True)
-        self.message.setPlainText(text)
+        self.message = QtWidgets.QLabel()
+        self.message.setText(text)
+        self.message.setWordWrap(True)
         self.message.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
 
         if is_user:
@@ -34,7 +34,10 @@ class MessageWidget(QtWidgets.QFrame):
         layout.addWidget(self.message)
 
     def append_text(self, text):
-        cursor = self.message.textCursor()
-        cursor.movePosition(QtGui.QTextCursor.MoveOperation.End)
-        cursor.insertText(text)
-        self.message.setTextCursor(cursor)
+        pre = self.message.text()
+        cur = pre + text
+        self.message.setText(cur)
+        # cursor = self.message.textCursor()
+        # cursor.movePosition(QtGui.QTextCursor.MoveOperation.End)
+        # cursor.insertText(text)
+        # self.message.setTextCursor(cursor)

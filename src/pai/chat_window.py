@@ -1,20 +1,22 @@
 import json
 import threading
+from pathlib import Path
 
-import ollama
+import ollama as llm
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from pai import CONFIG_FILE_NAME
+# import pai.dummy_llm as llm
+from pai import CONFIG_DEFAULT, CONFIG_FILE_NAME
 from pai.config_dialog import ConfigDialog
 from pai.message_widget import MessageWidget
 from pai.typing_indicator import TypingIndicator
 
 
-class ChatWindow(QtGui.QMainWindow):
+class ChatWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Personal AI")
-        self.setMinimumSize(600, 800)
+        self.setMinimumSize(600, 500)
 
         # Initialize configuration and history
         self.config = self.load_config()
@@ -38,6 +40,8 @@ class ChatWindow(QtGui.QMainWindow):
         scroll_area.setHorizontalScrollBarPolicy(
             QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
+        self.vscrollbar = scroll_area.verticalScrollBar()
+        self.vscrollbar.rangeChanged.connect(self.scroll_to_bottom)
 
         # Create widget to hold messages
         self.messages_widget = QtWidgets.QWidget()
@@ -89,15 +93,12 @@ class ChatWindow(QtGui.QMainWindow):
         settings_menu.addAction(load_action)
 
     def load_config(self):
-        try:
-            with open(CONFIG_FILE_NAME, "r") as f:
-                return json.load(f)
-        except FileNotFoundError:
-            return {
-                "system_prompt": "You are a helpful AI assistant.",
-                "temperature": 0.7,
-                "model_name": "llama3.2",
-            }
+        if not Path(CONFIG_FILE_NAME).exists():
+            with open(CONFIG_FILE_NAME, "w") as f:
+                json.dump(CONFIG_DEFAULT, f)
+
+        with open(CONFIG_FILE_NAME, "r") as f:
+            return json.load(f)
 
     def save_config(self):
         with open(CONFIG_FILE_NAME, "w") as f:
@@ -156,6 +157,9 @@ class ChatWindow(QtGui.QMainWindow):
         self.messages_layout.insertWidget(insert_pos, message)
         return message
 
+    def scroll_to_bottom(self, _, vmax):
+        self.vscrollbar.setValue(vmax)
+
     def send_message(self):
         # Disable input while processing
         self.input_box.setEnabled(False)
@@ -189,7 +193,7 @@ class ChatWindow(QtGui.QMainWindow):
 
             # Generate streaming response using Ollama
             response_text = ""
-            for response in ollama.chat(
+            for response in llm.chat(
                 model=self.config["model_name"],
                 messages=self.conversation_history,
                 stream=True,

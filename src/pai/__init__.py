@@ -1,3 +1,8 @@
-from pathlib import PurePath
+from pathlib import Path
 
-CONFIG_FILE_NAME = f"{PurePath(__file__).stem}.cfg"
+CONFIG_FILE_NAME = Path.home() / ".pai.cfg"
+CONFIG_DEFAULT = {
+    "system_prompt": "You are a helpful AI assistant.",
+    "temperature": 0.7,
+    "model_name": "llama3.2",
+}
