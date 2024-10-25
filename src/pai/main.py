@@ -1,7 +1,8 @@
 import sys
-from PySide6 import QtWidgets, QtGui
-from pai.chat_window import ChatWindow
 
+from PySide6 import QtGui, QtWidgets
+
+from pai.chat_window import ChatWindow
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)

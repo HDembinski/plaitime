@@ -1,11 +1,13 @@
+import json
+import threading
+
+import ollama
 from PySide6 import QtCore, QtGui, QtWidgets
-from pai.typing_indicator import TypingIndicator
+
+from pai import CONFIG_FILE_NAME
 from pai.config_dialog import ConfigDialog
 from pai.message_widget import MessageWidget
-from pai import CONFIG_FILE_NAME
-import json
-import ollama
-import threading
+from pai.typing_indicator import TypingIndicator
 
 
 class ChatWindow(QtGui.QMainWindow):

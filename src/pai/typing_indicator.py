@@ -1,19 +1,18 @@
-from PyQt6.QtWidgets import QFrame, QVBoxLayout, QLabel
-from PyQt6.QtCore import QTimer
+from PySide6 import QtCore, QtWidgets
 
 
-class TypingIndicator(QFrame):
+class TypingIndicator(QtWidgets.QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFrameStyle(QFrame.Shape.Box | QFrame.Shadow.Raised)
+        self.setFrameStyle(QtWidgets.QFrame.Shape.Box | QtWidgets.QFrame.Shadow.Raised)
         self.dots = 1
-        self.timer = QTimer(self)
+        self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self.update_dots)
 
-        layout = QVBoxLayout()
+        layout = QtWidgets.QVBoxLayout()
         self.setLayout(layout)
 
-        self.message = QLabel("Thinking")
+        self.message = QtWidgets.QLabel("Thinking")
         layout.addWidget(self.message)
 
         self.setStyleSheet("""

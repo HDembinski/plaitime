@@ -23,7 +23,7 @@ where = ["src"]
 [tool.setuptools_scm]
 
 [tool.ruff.lint]
-extend-select = ["D", "I"]
+extend-select = ["I"]
 ignore = ["D212", "D211", "D203"]
 
 [tool.ruff.lint.per-file-ignores]
