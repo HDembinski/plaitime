@@ -1,5 +1,5 @@
 from PySide6 import QtWidgets
-import mistune
+from pai.parser import parse
 
 
 class MessageWidget(QtWidgets.QFrame):
@@ -18,17 +18,17 @@ class MessageWidget(QtWidgets.QFrame):
         if is_user:
             self.setStyleSheet("""
                 QFrame {
-                    background-color: #E3F2FD;
+                    background-color: #F5F5F5;
                     border-radius: 10px;
-                    margin: 5px 50px 5px 5px;
+                    margin: 5px 5px 5px 50px;
                 }
             """)
         else:
             self.setStyleSheet("""
                 QFrame {
-                    background-color: #F5F5F5;
+                    background-color: #E3F2FD;
                     border-radius: 10px;
-                    margin: 5px 5px 5px 50px;
+                    margin: 5px 50px 5px 5px;
                 }
             """)
 
@@ -39,4 +39,5 @@ class MessageWidget(QtWidgets.QFrame):
 
     def set_text(self, text):
         self.markdown = text
-        self.message.setText(mistune.html(text))
+        html = parse(text)
+        self.message.setText(html)

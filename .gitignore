@@ -2,3 +2,5 @@
 *.txt
 *.egg-info
 *.pyc
+__pycache__
+.pytest_cache
