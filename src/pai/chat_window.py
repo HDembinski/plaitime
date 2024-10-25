@@ -195,3 +195,9 @@ class ChatWindow(QtWidgets.QMainWindow):
             error_message += f"2. The model '{self.config['model']}' is available\n"
             error_message += "3. You can run 'ollama run modelname' in terminal"
             response_widget.append_text(error_message)
+
+    def keyPressEvent(self, event):
+        if event.key() == QtCore.Key_Return:
+            self.send_message()
+            return
+        super().keyPressEvent(event)
