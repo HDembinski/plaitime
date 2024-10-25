@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools >= 60", "setuptools_scm[toml] >= 8.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pai"
+requires-python = ">=3.9"
+dependencies = ["pyside6", "ollama"]
+authors = [{ name = "Hans Dembinski", email = "hans.dembinski@gmail.com" }]
+readme = "README.md"
+description = "Simple AI Chat"
+license = { text = "MIT" }
+classifiers = [
+    # complete classifier list: http://pypi.python.org/pypi?%3Aaction=list_classifiers
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+]
+dynamic = ["version"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools_scm]
+
+[tool.ruff.lint]
+extend-select = ["D", "I"]
+ignore = ["D212", "D211", "D203"]
+
+[tool.ruff.lint.per-file-ignores]
+"test_*.py" = ["D"]

@@ -1,169 +1,14 @@
-import sys
+from PySide6 import QtCore, QtGui, QtWidgets
+from pai.typing_indicator import TypingIndicator
+from pai.config_dialog import ConfigDialog
+from pai.message_widget import MessageWidget
+from pai import CONFIG_FILE_NAME
 import json
-import threading
-from PyQt6.QtWidgets import (
-    QApplication,
-    QMainWindow,
-    QWidget,
-    QVBoxLayout,
-    QTextEdit,
-    QPushButton,
-    QScrollArea,
-    QFrame,
-    QDialog,
-    QLabel,
-    QLineEdit,
-    QDialogButtonBox,
-    QTabWidget,
-    QFormLayout,
-    QDoubleSpinBox,
-    QFileDialog,
-)
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QTextCursor, QFont, QAction
 import ollama
-from pathlib import Path
-
-CONFIG_FILE_NAME = f"{Path(__file__).basename}.cfg"
+import threading
 
 
-class TypingIndicator(QFrame):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setFrameStyle(QFrame.Shape.Box | QFrame.Shadow.Raised)
-        self.dots = 1
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.update_dots)
-
-        layout = QVBoxLayout()
-        self.setLayout(layout)
-
-        self.message = QLabel("Thinking")
-        layout.addWidget(self.message)
-
-        self.setStyleSheet("""
-            QFrame {
-                background-color: #F5F5F5;
-                border-radius: 10px;
-                margin: 5px 5px 5px 50px;
-                padding: 10px;
-            }
-        """)
-
-    def start(self):
-        self.timer.start(500)
-        self.show()
-
-    def stop(self):
-        self.timer.stop()
-        self.hide()
-
-    def update_dots(self):
-        self.dots = (self.dots % 3) + 1
-        self.message.setText("Thinking" + "." * self.dots)
-
-
-class ConfigDialog(QDialog):
-    def __init__(self, config, parent=None):
-        super().__init__(parent)
-        self.config = config
-        self.setWindowTitle("LLM Configuration")
-        self.setMinimumWidth(500)
-
-        tabs = QTabWidget()
-
-        # System Prompt Tab
-        system_prompt_widget = QWidget()
-        system_prompt_layout = QVBoxLayout()
-
-        self.system_prompt = QTextEdit()
-        self.system_prompt.setPlainText(config["system_prompt"])
-        self.system_prompt.setMinimumHeight(200)
-
-        system_prompt_layout.addWidget(QLabel("System Prompt"))
-        system_prompt_layout.addWidget(self.system_prompt)
-        system_prompt_widget.setLayout(system_prompt_layout)
-        tabs.addTab(system_prompt_widget, "System Prompt")
-
-        # Model Parameters Tab
-        params_widget = QWidget()
-        params_layout = QFormLayout()
-
-        self.temperature = QDoubleSpinBox()
-        self.temperature.setRange(0.0, 2.0)
-        self.temperature.setSingleStep(0.1)
-        self.temperature.setValue(config["temperature"])
-
-        self.model_name = QLineEdit()
-        self.model_name.setText(config["model_name"])
-
-        params_layout.addRow("Temperature", self.temperature)
-        params_layout.addRow("Model", self.model_name)
-
-        params_widget.setLayout(params_layout)
-        tabs.addTab(params_widget, "Parameters")
-
-        # Dialog buttons
-        button_box = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        button_box.accepted.connect(self.accept)
-        button_box.rejected.connect(self.reject)
-
-        # Main layout
-        layout = QVBoxLayout()
-        layout.addWidget(tabs)
-        layout.addWidget(button_box)
-        self.setLayout(layout)
-
-    def get_config(self):
-        return {
-            "system_prompt": self.system_prompt.toPlainText(),
-            "temperature": self.temperature.value(),
-            "model_name": self.model_name.text(),
-        }
-
-
-class MessageWidget(QFrame):
-    def __init__(self, text="", is_user=True, parent=None):
-        super().__init__(parent)
-        self.setFrameStyle(QFrame.Shape.Box | QFrame.Shadow.Raised)
-
-        layout = QVBoxLayout()
-        self.setLayout(layout)
-
-        self.message = QTextEdit()
-        self.message.setReadOnly(True)
-        self.message.setPlainText(text)
-        self.message.setFrameStyle(QFrame.Shape.NoFrame)
-
-        if is_user:
-            self.setStyleSheet("""
-                QFrame {
-                    background-color: #E3F2FD;
-                    border-radius: 10px;
-                    margin: 5px 50px 5px 5px;
-                }
-            """)
-        else:
-            self.setStyleSheet("""
-                QFrame {
-                    background-color: #F5F5F5;
-                    border-radius: 10px;
-                    margin: 5px 5px 5px 50px;
-                }
-            """)
-
-        layout.addWidget(self.message)
-
-    def append_text(self, text):
-        cursor = self.message.textCursor()
-        cursor.movePosition(QTextCursor.MoveOperation.End)
-        cursor.insertText(text)
-        self.message.setTextCursor(cursor)
-
-
-class ChatWindow(QMainWindow):
+class ChatWindow(QtGui.QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Personal AI")
@@ -181,18 +26,20 @@ class ChatWindow(QMainWindow):
         self.create_menu_bar()
 
         # Create central widget and layout
-        central_widget = QWidget()
+        central_widget = QtWidgets.QWidget()
         self.setCentralWidget(central_widget)
-        layout = QVBoxLayout(central_widget)
+        layout = QtWidgets.QVBoxLayout(central_widget)
 
         # Create scroll area for messages
-        scroll_area = QScrollArea()
+        scroll_area = QtWidgets.QScrollArea()
         scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_area.setHorizontalScrollBarPolicy(
+            QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
 
         # Create widget to hold messages
-        self.messages_widget = QWidget()
-        self.messages_layout = QVBoxLayout(self.messages_widget)
+        self.messages_widget = QtWidgets.QWidget()
+        self.messages_layout = QtWidgets.QVBoxLayout(self.messages_widget)
         self.messages_layout.addStretch()
 
         scroll_area.setWidget(self.messages_widget)
@@ -204,13 +51,13 @@ class ChatWindow(QMainWindow):
         self.messages_layout.addWidget(self.typing_indicator)
 
         # Create input area
-        self.input_box = QTextEdit()
+        self.input_box = QtWidgets.QTextEdit()
         self.input_box.setMaximumHeight(100)
         self.input_box.setPlaceholderText("Type your message here...")
         layout.addWidget(self.input_box)
 
         # Create send button
-        self.send_button = QPushButton("Send")
+        self.send_button = QtWidgets.QPushButton("Send")
         self.send_button.clicked.connect(self.send_message)
         layout.addWidget(self.send_button)
 
@@ -226,16 +73,16 @@ class ChatWindow(QMainWindow):
         settings_menu = menubar.addMenu("Settings")
 
         # Configure LLM action
-        config_action = QAction("Configure AI", self)
+        config_action = QtGui.QAction("Configure AI", self)
         config_action.triggered.connect(self.show_config_dialog)
         settings_menu.addAction(config_action)
 
         # Save/Load conversation actions
-        save_action = QAction("Save", self)
+        save_action = QtGui.QAction("Save", self)
         save_action.triggered.connect(self.save_conversation)
         settings_menu.addAction(save_action)
 
-        load_action = QAction("Load", self)
+        load_action = QtGui.QAction("Load", self)
         load_action.triggered.connect(self.load_conversation)
         settings_menu.addAction(load_action)
 
@@ -256,12 +103,12 @@ class ChatWindow(QMainWindow):
 
     def show_config_dialog(self):
         dialog = ConfigDialog(self.config, self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
+        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             self.config = dialog.get_config()
             self.save_config()
 
     def save_conversation(self):
-        file_name, _ = QFileDialog.getSaveFileName(
+        file_name, _ = QtWidgets.QFileDialog.getSaveFileName(
             self, "Save Conversation", "", "JSON Files (*.json)"
         )
         if file_name:
@@ -273,7 +120,7 @@ class ChatWindow(QMainWindow):
                 json.dump(conversation_data, f, indent=4)
 
     def load_conversation(self):
-        file_name, _ = QFileDialog.getOpenFileName(
+        file_name, _ = QtWidgets.QFileDialog.getOpenFileName(
             self, "Load Conversation", "", "JSON Files (*.json)"
         )
         if file_name:
@@ -372,15 +219,3 @@ class ChatWindow(QMainWindow):
             self.input_box.setEnabled(True)
             self.send_button.setEnabled(True)
             self.typing_indicator.stop()
-
-
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-
-    # Set application-wide font
-    font = QFont("Arial", 10)
-    app.setFont(font)
-
-    window = ChatWindow()
-    window.show()
-    sys.exit(app.exec())
