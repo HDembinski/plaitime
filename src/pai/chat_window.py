@@ -5,7 +5,7 @@ import ollama as llm
 from PySide6 import QtCore, QtGui, QtWidgets
 
 # import pai.dummy_llm as llm
-from pai import CONFIG_DEFAULT, CONFIG_FILE_NAME
+from pai import CONFIG_DEFAULT, CONFIG_FILE_NAME, CHARACTER_DEFAULT, CHARACTER_DIRECTORY
 from pai.config_dialog import ConfigDialog
 from pai.message_widget import MessageWidget
 import logging
@@ -31,8 +31,9 @@ class ChatWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("PAI")
         self.setMinimumSize(600, 500)
 
-        # Initialize configuration and history
+        # Initialize configuration
         self.config = self.load_config()
+        self.character = self.load_character(self.config["current_character"])
 
         # Create menu bar
         self.create_menu_bar()
@@ -72,7 +73,7 @@ class ChatWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.send_button)
 
         # replay chat
-        for message in self.config["conversation"]:
+        for message in self.character["conversation"]:
             self.add_message(message["content"], message["role"] == "user")
 
     def create_menu_bar(self):
@@ -98,11 +99,28 @@ class ChatWindow(QtWidgets.QMainWindow):
         with open(CONFIG_FILE_NAME, "w") as f:
             json.dump(self.config, f, indent=4)
 
+    def load_character(self, name):
+        if not name:
+            return CHARACTER_DEFAULT
+
+        with open(CHARACTER_DIRECTORY / f"{name}.json") as f:
+            return json.load(f)
+
+    def save_character(self):
+        name = self.config["current_character"]
+        with open(CHARACTER_DIRECTORY / f"{name}.json", "w") as f:
+            json.dump(self.character, f)
+
+    def save_all(self):
+        self.save_config()
+        self.save_character()
+
     def show_config_dialog(self):
-        dialog = ConfigDialog(self.config, self)
+        dialog = ConfigDialog(self.character, self)
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            self.config.update(dialog.get_config())
-            self.save_config()
+            self.character.update(dialog.get_config())
+            self.config["current_character"] = self.character["name"]
+            self.save_all()
 
     def add_message(self, text, is_user=True):
         message = MessageWidget(text, is_user)
@@ -139,19 +157,16 @@ class ChatWindow(QtWidgets.QMainWindow):
             num_char += len(message["content"])
         num_token = num_char / 4
         logging.info(f"current estimated number of tokens: {num_token}")
-        return num_token > self.config.get(
-            "context_limit", CONFIG_DEFAULT["context_limit"]
+        return num_token > self.character.get(
+            "context_limit", CHARACTER_DEFAULT["context_limit"]
         )
 
     def generate_response(self, user_input):
         response_widget = self.add_message("", False)
 
         # always use current system prompt
-        system_prompt = self.config.get(
-            "system_prompt", CONFIG_DEFAULT["system_prompt"]
-        )
-
-        conversation = self.config["conversation"]
+        system_prompt = self.character["system_prompt"]
+        conversation = self.character["conversation"]
 
         # enable endless chatting by clipping the conversation if it gets too long
         while len(conversation) > 2 and self.is_context_nearly_full(conversation):
@@ -169,10 +184,10 @@ class ChatWindow(QtWidgets.QMainWindow):
             # Generate streaming response using Ollama
             chunks = []
             for response in llm.chat(
-                model=self.config["model"],
+                model=self.character["model"],
                 messages=[{"role": "system", "content": system_prompt}] + conversation,
                 stream=True,
-                options={"temperature": self.config["temperature"]},
+                options={"temperature": self.character["temperature"]},
             ):
                 QtCore.QCoreApplication.processEvents()
                 chunk = response["message"]["content"]
@@ -186,7 +201,7 @@ class ChatWindow(QtWidgets.QMainWindow):
             error_message = f"Error generating response: {str(e)}\n\n"
             error_message += "Please make sure:\n"
             error_message += "1. Ollama is installed and running\n"
-            error_message += f"2. The model '{self.config['model']}' is available\n"
+            error_message += f"2. The model '{self.character['model']}' is available\n"
             error_message += "3. You can run 'ollama run modelname' in terminal"
             response_widget.set_text(error_message)
 

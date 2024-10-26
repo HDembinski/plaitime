@@ -3,29 +3,17 @@ import ollama
 
 
 class ConfigDialog(QtWidgets.QDialog):
-    def __init__(self, config, parent=None):
+    def __init__(self, character, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("LLM Configuration")
+        self.setWindowTitle("Character configuration")
         self.setMinimumWidth(500)
 
-        tabs = QtWidgets.QTabWidget()
-
-        # System Prompt Tab
-        system_prompt_widget = QtWidgets.QWidget()
-        system_prompt_layout = QtWidgets.QVBoxLayout()
+        self.name = QtWidgets.QLineEdit()
+        self.name.setText(character["name"])
 
         self.system_prompt = QtWidgets.QTextEdit()
-        self.system_prompt.setPlainText(config["system_prompt"])
+        self.system_prompt.setPlainText(character["system_prompt"])
         self.system_prompt.setMinimumHeight(200)
-
-        system_prompt_layout.addWidget(QtWidgets.QLabel("System Prompt"))
-        system_prompt_layout.addWidget(self.system_prompt)
-        system_prompt_widget.setLayout(system_prompt_layout)
-        tabs.addTab(system_prompt_widget, "System Prompt")
-
-        # Model Parameters Tab
-        params_widget = QtWidgets.QWidget()
-        params_layout = QtWidgets.QFormLayout()
 
         self.model = QtWidgets.QComboBox()
         installed_models = []
@@ -33,28 +21,31 @@ class ConfigDialog(QtWidgets.QDialog):
             installed_models.append(item["name"].split(":")[0])
         installed_models.sort()
         self.model.addItems(installed_models)
-        i = self.model.findText(config["model"])
+        i = self.model.findText(character["model"])
         if i >= 0:
             self.model.setCurrentIndex(i)
         else:
-            self.model.addItem(config["model"])
+            self.model.addItem(character["model"])
 
         self.context_limit = QtWidgets.QSpinBox()
         self.context_limit.setRange(0, 1_000_000)
         self.context_limit.setSingleStep(1000)
-        self.context_limit.setValue(config["context_limit"])
+        self.context_limit.setValue(character["context_limit"])
 
         self.temperature = QtWidgets.QDoubleSpinBox()
         self.temperature.setRange(0.0, 2.0)
         self.temperature.setSingleStep(0.1)
-        self.temperature.setValue(config["temperature"])
+        self.temperature.setValue(character["temperature"])
 
-        params_layout.addRow("Model", self.model)
-        params_layout.addRow("Context Limit", self.context_limit)
-        params_layout.addRow("Temperature", self.temperature)
+        clayout = QtWidgets.QFormLayout()
+        clayout.addRow("Name", self.name)
+        clayout.addRow("System prompt", self.system_prompt)
+        clayout.addRow("Model", self.model)
+        clayout.addRow("Context Limit", self.context_limit)
+        clayout.addRow("Temperature", self.temperature)
 
-        params_widget.setLayout(params_layout)
-        tabs.addTab(params_widget, "Parameters")
+        vlayout = QtWidgets.QVBoxLayout()
+        vlayout.addLayout(clayout)
 
         # Dialog buttons
         button_box = QtWidgets.QDialogButtonBox(
@@ -65,13 +56,12 @@ class ConfigDialog(QtWidgets.QDialog):
         button_box.rejected.connect(self.reject)
 
         # Main layout
-        layout = QtWidgets.QVBoxLayout()
-        layout.addWidget(tabs)
-        layout.addWidget(button_box)
-        self.setLayout(layout)
+        vlayout.addWidget(button_box)
+        self.setLayout(vlayout)
 
     def get_config(self):
         return {
+            "name": self.name.text(),
             "system_prompt": self.system_prompt.toPlainText(),
             "model": self.model.currentText(),
             "context_limit": self.context_limit.value(),

@@ -21,6 +21,7 @@ class MessageWidget(QtWidgets.QFrame):
                     background-color: #F5F5F5;
                     border-radius: 10px;
                     margin: 5px 5px 5px 50px;
+                    text-align: right;
                 }
             """)
         else:
