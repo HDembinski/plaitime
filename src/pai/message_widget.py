@@ -1,5 +1,5 @@
-from PySide6 import QtWidgets
-from pai.parser import parse
+from PySide6 import QtWidgets, QtCore
+from mistune import html
 
 
 class MessageWidget(QtWidgets.QFrame):
@@ -34,10 +34,9 @@ class MessageWidget(QtWidgets.QFrame):
 
         layout.addWidget(self.message)
 
-    def append_text(self, text):
-        self.set_text(self.markdown + text)
-
     def set_text(self, text):
-        self.markdown = text
-        html = parse(text)
-        self.message.setText(html)
+        self.message.setText(html(text))
+        QtCore.QCoreApplication.processEvents()
+
+    def set_thinking(self):
+        self.message.setText("...")

@@ -14,4 +14,5 @@ def main():
 
     window = ChatWindow()
     window.show()
+    app.lastWindowClosed.connect(window.save_config)
     sys.exit(app.exec())

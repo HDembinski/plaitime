@@ -8,6 +8,9 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from pai import CONFIG_DEFAULT, CONFIG_FILE_NAME
 from pai.config_dialog import ConfigDialog
 from pai.message_widget import MessageWidget
+import logging
+
+logger = logging.getLogger()
 
 
 class TextEdit(QtWidgets.QTextEdit):
@@ -25,16 +28,11 @@ class TextEdit(QtWidgets.QTextEdit):
 class ChatWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Personal AI")
+        self.setWindowTitle("PAI")
         self.setMinimumSize(600, 500)
 
         # Initialize configuration and history
         self.config = self.load_config()
-        self.conversation_history = []
-        if self.config.get("system_prompt"):
-            self.conversation_history.append(
-                {"role": "system", "content": self.config["system_prompt"]}
-            )
 
         # Create menu bar
         self.create_menu_bar()
@@ -73,6 +71,10 @@ class ChatWindow(QtWidgets.QMainWindow):
         self.send_button.clicked.connect(self.send_message)
         layout.addWidget(self.send_button)
 
+        # replay chat
+        for message in self.config["conversation"]:
+            self.add_message(message["content"], message["role"] == "user")
+
     def create_menu_bar(self):
         menubar = self.menuBar()
 
@@ -83,15 +85,6 @@ class ChatWindow(QtWidgets.QMainWindow):
         config_action = QtGui.QAction("Configure", self)
         config_action.triggered.connect(self.show_config_dialog)
         settings_menu.addAction(config_action)
-
-        # Save/Load conversation actions
-        save_action = QtGui.QAction("Save", self)
-        save_action.triggered.connect(self.save_conversation)
-        settings_menu.addAction(save_action)
-
-        load_action = QtGui.QAction("Load", self)
-        load_action.triggered.connect(self.load_conversation)
-        settings_menu.addAction(load_action)
 
     def load_config(self):
         if not Path(CONFIG_FILE_NAME).exists():
@@ -108,99 +101,86 @@ class ChatWindow(QtWidgets.QMainWindow):
     def show_config_dialog(self):
         dialog = ConfigDialog(self.config, self)
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            self.config = dialog.get_config()
+            self.config.update(dialog.get_config())
             self.save_config()
-
-    def save_conversation(self):
-        file_name, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Save Conversation", "", "JSON Files (*.json)"
-        )
-        if file_name:
-            conversation_data = {
-                "messages": self.conversation_history,
-                "config": self.config,
-            }
-            with open(file_name, "w") as f:
-                json.dump(conversation_data, f, indent=4)
-
-    def load_conversation(self):
-        NotImplemented
 
     def add_message(self, text, is_user=True):
         message = MessageWidget(text, is_user)
         insert_pos = self.messages_layout.count()
         self.messages_layout.insertWidget(insert_pos, message)
+        if not is_user and not text:
+            message.set_thinking()
         return message
 
     def scroll_to_bottom(self, _, vmax):
         self.vscrollbar.setValue(vmax)
 
     def send_message(self):
-        # Disable input while processing
+        user_text = self.input_box.toPlainText().strip()
 
-        message_text = self.input_box.toPlainText().strip()
-
-        if message_text:
+        if user_text:
             self.input_box.clear()
-            self.input_box.setEnabled(False)
             self.send_button.setEnabled(False)
 
             # Add user message
-            self.add_message(message_text, True)
+            self.add_message(user_text, True)
 
-            # Create response widget with empty text
-            response_widget = self.add_message("", False)
-
-            self.generate_response(message_text, response_widget)
+            # Add AI response
+            self.generate_response(user_text)
 
             # Re-enable input in the main thread
-            self.input_box.setEnabled(True)
             self.send_button.setEnabled(True)
-            self.input_box.setFocus()
+            # self.input_box.setFocus()
 
-    def is_context_nearly_full(self, converstation_history):
+    def is_context_nearly_full(self, converstation):
         # estimate number of token
         num_char = 0
-        for message in converstation_history:
+        for message in converstation:
             num_char += len(message["content"])
         num_token = num_char / 4
+        logging.info(f"current estimated number of tokens: {num_token}")
         return num_token > self.config.get(
             "context_limit", CONFIG_DEFAULT["context_limit"]
         )
 
-    def generate_response(self, user_input, response_widget):
-        # Add user message to conversation history
-        self.conversation_history.append({"role": "user", "content": user_input})
+    def generate_response(self, user_input):
+        response_widget = self.add_message("", False)
 
-        # enable endless chatting by clipping the conversation if it gets too long,
-        # while keeping the system prompt
-        while len(self.conversation_history) > 2 and self.is_context_nearly_full(
-            self.conversation_history
-        ):
-            self.conversation_history = (
-                self.conversation_history[:1] + self.conversation_history[3:]
+        # always use current system prompt
+        system_prompt = self.config.get(
+            "system_prompt", CONFIG_DEFAULT["system_prompt"]
+        )
+
+        conversation = self.config["conversation"]
+
+        # enable endless chatting by clipping the conversation if it gets too long
+        while len(conversation) > 2 and self.is_context_nearly_full(conversation):
+            logging.info(
+                "context nearly full, dropping oldest messages "
+                + f"(lenght of conversation = {len(conversation)})"
             )
+            # drop oldest user message and response
+            conversation = conversation[2:]
+
+        # add user message to conversation history
+        conversation.append({"role": "user", "content": user_input})
 
         try:
             # Generate streaming response using Ollama
-            response_text = ""
+            chunks = []
             for response in llm.chat(
                 model=self.config["model"],
-                messages=self.conversation_history,
+                messages=[{"role": "system", "content": system_prompt}] + conversation,
                 stream=True,
                 options={"temperature": self.config["temperature"]},
             ):
                 QtCore.QCoreApplication.processEvents()
                 chunk = response["message"]["content"]
-                response_text += chunk
-
-                # Update UI in the main thread
-                response_widget.append_text(chunk)
+                chunks.append(chunk)
+                response_widget.set_text("".join(chunks))
 
             # Add assistant's response to conversation history
-            self.conversation_history.append(
-                {"role": "assistant", "content": response_text}
-            )
+            conversation.append({"role": "assistant", "content": "".join(chunks)})
 
         except Exception as e:
             error_message = f"Error generating response: {str(e)}\n\n"
@@ -208,7 +188,7 @@ class ChatWindow(QtWidgets.QMainWindow):
             error_message += "1. Ollama is installed and running\n"
             error_message += f"2. The model '{self.config['model']}' is available\n"
             error_message += "3. You can run 'ollama run modelname' in terminal"
-            response_widget.append_text(error_message)
+            response_widget.set_text(error_message)
 
     def keyPressEvent(self, event):
         if event.key() == QtCore.Qt.Key_Return:

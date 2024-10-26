@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pai"
 requires-python = ">=3.9"
-dependencies = ["pyside6", "ollama"]
+dependencies = ["pyside6", "ollama", "mistune"]
 authors = [{ name = "Hans Dembinski", email = "hans.dembinski@gmail.com" }]
 readme = "README.md"
 description = "Simple AI Chat"

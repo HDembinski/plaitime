@@ -6,4 +6,5 @@ CONFIG_DEFAULT = {
     "model": "llama3.2",
     "context_limit": 100_000,
     "temperature": 0.7,
+    "conversation": [],
 }
