@@ -196,7 +196,6 @@ class ChatWindow(QtWidgets.QMainWindow):
             + "\n"
             + self.general_system_prompt.format(name=self.top_bar.current_character())
         )
-        print(system_prompt)
 
         conversation = self.character["conversation"]
 
