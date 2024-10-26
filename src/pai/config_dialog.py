@@ -3,17 +3,17 @@ import ollama
 
 
 class ConfigDialog(QtWidgets.QDialog):
-    def __init__(self, character, parent=None):
+    def __init__(self, name, character, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Character configuration")
         self.setMinimumWidth(500)
 
         self.name = QtWidgets.QLineEdit()
-        self.name.setText(character["name"])
+        self.name.setText(name)
 
-        self.system_prompt = QtWidgets.QTextEdit()
-        self.system_prompt.setPlainText(character["system_prompt"])
-        self.system_prompt.setMinimumHeight(200)
+        self.prompt = QtWidgets.QTextEdit()
+        self.prompt.setPlainText(character["prompt"])
+        self.prompt.setMinimumHeight(200)
 
         self.model = QtWidgets.QComboBox()
         installed_models = []
@@ -27,11 +27,6 @@ class ConfigDialog(QtWidgets.QDialog):
         else:
             self.model.addItem(character["model"])
 
-        self.context_limit = QtWidgets.QSpinBox()
-        self.context_limit.setRange(0, 1_000_000)
-        self.context_limit.setSingleStep(1000)
-        self.context_limit.setValue(character["context_limit"])
-
         self.temperature = QtWidgets.QDoubleSpinBox()
         self.temperature.setRange(0.0, 2.0)
         self.temperature.setSingleStep(0.1)
@@ -39,9 +34,8 @@ class ConfigDialog(QtWidgets.QDialog):
 
         clayout = QtWidgets.QFormLayout()
         clayout.addRow("Name", self.name)
-        clayout.addRow("System prompt", self.system_prompt)
+        clayout.addRow("Prompt", self.prompt)
         clayout.addRow("Model", self.model)
-        clayout.addRow("Context Limit", self.context_limit)
         clayout.addRow("Temperature", self.temperature)
 
         vlayout = QtWidgets.QVBoxLayout()
@@ -59,11 +53,9 @@ class ConfigDialog(QtWidgets.QDialog):
         vlayout.addWidget(button_box)
         self.setLayout(vlayout)
 
-    def get_config(self):
-        return {
-            "name": self.name.text(),
-            "system_prompt": self.system_prompt.toPlainText(),
+    def result(self):
+        return self.name.text(), {
+            "prompt": self.prompt.toPlainText(),
             "model": self.model.currentText(),
-            "context_limit": self.context_limit.value(),
             "temperature": self.temperature.value(),
         }

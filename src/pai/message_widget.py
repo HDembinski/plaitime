@@ -37,7 +37,6 @@ class MessageWidget(QtWidgets.QFrame):
 
     def set_text(self, text):
         self.message.setText(html(text))
-        QtCore.QCoreApplication.processEvents()
 
     def set_thinking(self):
         self.message.setText("...")

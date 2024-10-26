@@ -1,12 +1,13 @@
 import json
-from pathlib import Path
+import re
 
 import ollama as llm
-from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtWidgets
 
 # import pai.dummy_llm as llm
 from pai import CONFIG_DEFAULT, CONFIG_FILE_NAME, CHARACTER_DEFAULT, CHARACTER_DIRECTORY
 from pai.config_dialog import ConfigDialog
+from pai.top_bar import TopBar
 from pai.message_widget import MessageWidget
 import logging
 
@@ -31,12 +32,15 @@ class ChatWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("PAI")
         self.setMinimumSize(600, 500)
 
-        # Initialize configuration
-        self.config = self.load_config()
-        self.character = self.load_character(self.config["current_character"])
-
-        # Create menu bar
-        self.create_menu_bar()
+        # Create top bar
+        self.top_bar = TopBar()
+        self.setMenuWidget(self.top_bar)
+        self.top_bar.config_button.clicked.connect(self.show_config_dialog)
+        self.top_bar.new_button.clicked.connect(self.new_character)
+        self.top_bar.character_selector.currentTextChanged.connect(
+            self.switch_to_character
+        )
+        self.top_bar.clear_button.clicked.connect(self.clear_conversation)
 
         # Create central widget and layout
         central_widget = QtWidgets.QWidget()
@@ -44,21 +48,14 @@ class ChatWindow(QtWidgets.QMainWindow):
         layout = QtWidgets.QVBoxLayout(central_widget)
 
         # Create scroll area for messages
-        scroll_area = QtWidgets.QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(
+        self.scroll_area = QtWidgets.QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setHorizontalScrollBarPolicy(
             QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
-        self.vscrollbar = scroll_area.verticalScrollBar()
+        self.vscrollbar = self.scroll_area.verticalScrollBar()
         self.vscrollbar.rangeChanged.connect(self.scroll_to_bottom)
-
-        # Create widget to hold messages
-        self.messages_widget = QtWidgets.QWidget()
-        self.messages_layout = QtWidgets.QVBoxLayout(self.messages_widget)
-        self.messages_layout.addStretch()
-
-        scroll_area.setWidget(self.messages_widget)
-        layout.addWidget(scroll_area)
+        layout.addWidget(self.scroll_area)
 
         # Create input area
         self.input_box = TextEdit(self.send_message)
@@ -72,60 +69,99 @@ class ChatWindow(QtWidgets.QMainWindow):
         self.send_button.clicked.connect(self.send_message)
         layout.addWidget(self.send_button)
 
+        # Must be at the end
+        config = self.load_config()
+        self.general_system_prompt = config["general_prompt"]
+        self.load_character(config["current_character"])
+
+    def new_messages_widget(self):
+        self.messages_widget = QtWidgets.QWidget()
+        self.messages_layout = QtWidgets.QVBoxLayout(self.messages_widget)
+        self.messages_layout.addStretch()
+        self.scroll_area.setWidget(self.messages_widget)
+
         # replay chat
-        for message in self.character["conversation"]:
+        conversation = self.character["conversation"]
+        for message in conversation:
             self.add_message(message["content"], message["role"] == "user")
 
-    def create_menu_bar(self):
-        menubar = self.menuBar()
-
-        # Settings menu
-        settings_menu = menubar.addMenu("Settings")
-
-        # Configure LLM action
-        config_action = QtGui.QAction("Configure", self)
-        config_action.triggered.connect(self.show_config_dialog)
-        settings_menu.addAction(config_action)
+        num_token = estimate_num_tokens(conversation)
+        self.top_bar.update_num_token(num_token)
 
     def load_config(self):
-        if not Path(CONFIG_FILE_NAME).exists():
-            with open(CONFIG_FILE_NAME, "w") as f:
-                json.dump(CONFIG_DEFAULT, f)
-
-        with open(CONFIG_FILE_NAME, "r") as f:
-            return json.load(f)
+        config = CONFIG_DEFAULT.copy()
+        try:
+            with open(CONFIG_FILE_NAME, "r") as f:
+                config.update(json.load(f))
+        except IOError:
+            pass
+        return config
 
     def save_config(self):
         with open(CONFIG_FILE_NAME, "w") as f:
-            json.dump(self.config, f, indent=4)
+            config = {
+                "current_character": self.top_bar.current_character(),
+                "general_prompt": self.general_system_prompt,
+            }
+            json.dump(config, f, indent=4)
 
     def load_character(self, name):
-        if not name:
-            return CHARACTER_DEFAULT
-
-        with open(CHARACTER_DIRECTORY / f"{name}.json") as f:
-            return json.load(f)
+        self.character = {**CHARACTER_DEFAULT}
+        try:
+            with open(CHARACTER_DIRECTORY / f"{name}.json") as f:
+                self.character.update(json.load(f))
+            self.top_bar.update(name)
+        except Exception:
+            logger.error(f"loading character {name} failed")
+            self.top_bar.update("Assistant")
+        self.save_config()
+        self.new_messages_widget()
+        self.context_limit = get_context_size(self.character["model"]) - 256
+        logger.info(
+            f"context limit = {self.context_limit} for {self.character['model']}"
+        )
 
     def save_character(self):
-        name = self.config["current_character"]
+        c = self.load_config()
+        name = c["current_character"]
+        if name == "Assistant":
+            return
+        logger.info(f"saving character {name}")
         with open(CHARACTER_DIRECTORY / f"{name}.json", "w") as f:
-            json.dump(self.character, f)
+            json.dump(self.character, f, indent=4)
+        self.top_bar.update(name)
 
     def save_all(self):
         self.save_config()
         self.save_character()
 
     def show_config_dialog(self):
-        dialog = ConfigDialog(self.character, self)
+        dialog = ConfigDialog(self.top_bar.current_character(), self.character, self)
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            self.character.update(dialog.get_config())
-            self.config["current_character"] = self.character["name"]
-            self.save_all()
+            name, c = dialog.result()
+            self.character.update(c)
+            self.top_bar.update(name)
+            self.save_config()
+            self.save_character()
+
+    def new_character(self):
+        self.character = {**CHARACTER_DEFAULT}
+        self.top_bar.update("Assistant")
+        self.save_config()
+        self.show_config_dialog()
+
+    def switch_to_character(self, name):
+        # save_character takes old name from load_config
+        self.save_character()
+        self.load_character(name)
+
+    def clear_conversation(self):
+        self.character["conversation"] = []
+        self.new_messages_widget()
 
     def add_message(self, text, is_user=True):
         message = MessageWidget(text, is_user)
-        insert_pos = self.messages_layout.count()
-        self.messages_layout.insertWidget(insert_pos, message)
+        self.messages_layout.addWidget(message)
         if not is_user and not text:
             message.set_thinking()
         return message
@@ -150,26 +186,24 @@ class ChatWindow(QtWidgets.QMainWindow):
             self.send_button.setEnabled(True)
             # self.input_box.setFocus()
 
-    def is_context_nearly_full(self, converstation):
-        # estimate number of token
-        num_char = 0
-        for message in converstation:
-            num_char += len(message["content"])
-        num_token = num_char / 4
-        logging.info(f"current estimated number of tokens: {num_token}")
-        return num_token > self.character.get(
-            "context_limit", CHARACTER_DEFAULT["context_limit"]
-        )
-
     def generate_response(self, user_input):
         response_widget = self.add_message("", False)
+        QtCore.QCoreApplication.processEvents()
 
         # always use current system prompt
-        system_prompt = self.character["system_prompt"]
+        system_prompt = (
+            self.character["prompt"]
+            + "\n"
+            + self.general_system_prompt.format(name=self.top_bar.current_character())
+        )
+        print(system_prompt)
+
         conversation = self.character["conversation"]
 
+        num_token = estimate_num_tokens(conversation)
+
         # enable endless chatting by clipping the conversation if it gets too long
-        while len(conversation) > 2 and self.is_context_nearly_full(conversation):
+        while len(conversation) > 2 and num_token > self.context_limit:
             logging.info(
                 "context nearly full, dropping oldest messages "
                 + f"(lenght of conversation = {len(conversation)})"
@@ -205,8 +239,29 @@ class ChatWindow(QtWidgets.QMainWindow):
             error_message += "3. You can run 'ollama run modelname' in terminal"
             response_widget.set_text(error_message)
 
+        num_token = estimate_num_tokens(conversation)
+        self.top_bar.update_num_token(num_token)
+
     def keyPressEvent(self, event):
         if event.key() == QtCore.Qt.Key_Return:
             self.send_message()
             return
         super().keyPressEvent(event)
+
+
+def estimate_num_tokens(conversation):
+    # estimate number of token
+    num_char = 0
+    for message in conversation:
+        num_char += len(message["content"])
+    return num_char / 4
+
+
+def get_context_size(model):
+    d = llm.show(model)
+    m = re.search(r"num_ctx *(\d+)", d["parameters"])
+    if m:
+        return int(m.group(1))
+    else:
+        logger.warning(f"num_ctx not found {model}")
+        return 4096
