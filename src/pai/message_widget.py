@@ -11,9 +11,12 @@ class MessageWidget(QtWidgets.QFrame):
         self.setLayout(layout)
 
         self.message = QtWidgets.QLabel()
-        self.set_text(text)
         self.message.setWordWrap(True)
         self.message.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
+        self.message.setTextInteractionFlags(
+            QtCore.Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self.set_text(text)
 
         if is_user:
             self.setStyleSheet("""
