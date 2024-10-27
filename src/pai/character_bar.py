@@ -9,8 +9,10 @@ class CharacterBar(QtWidgets.QWidget):
 
         self.config_button = QtWidgets.QPushButton("Configure")
         self.character_selector = QtWidgets.QComboBox()
-        self.new_button = QtWidgets.QPushButton("Add character")
-        self.num_token = QtWidgets.QLabel()
+        self.new_button = QtWidgets.QPushButton("New character")
+        self.num_token = QtWidgets.QProgressBar()
+        self.num_token.setFormat("%v token (est.)")
+        self.num_token.setMinimum(0)
 
         layout = QtWidgets.QHBoxLayout()
         layout.addWidget(self.config_button)
@@ -18,8 +20,6 @@ class CharacterBar(QtWidgets.QWidget):
         layout.addWidget(self.new_button)
         layout.addWidget(self.num_token)
         self.setLayout(layout)
-
-        self.update_num_token(0)
 
     def set_character_manually(self, new_name):
         names = get_character_names()
@@ -36,8 +36,9 @@ class CharacterBar(QtWidgets.QWidget):
     def current_character(self):
         return self.character_selector.currentText()
 
-    def update_num_token(self, num: int):
-        self.num_token.setText(f"{num:.0f} token")
+    def update_num_token(self, num: int, size: int):
+        self.num_token.setMaximum(size)
+        self.num_token.setValue(num)
 
 
 def get_character_names():

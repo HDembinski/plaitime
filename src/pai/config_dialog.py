@@ -36,19 +36,14 @@ class ConfigDialog(QtWidgets.QDialog):
         self.temperature.setSingleStep(0.1)
         self.temperature.setValue(character.temperature)
 
-        self.append_global_prompt = QtWidgets.QCheckBox()
-        self.append_global_prompt.setChecked(character.append_global_prompt)
-
-        self.clear_button = QtWidgets.QPushButton()
-        self.clear_button.setCheckable(True)
+        self.clear_conversation = QtWidgets.QCheckBox()
 
         clayout = QtWidgets.QFormLayout()
         clayout.addRow("Name", self.name)
         clayout.addRow("Prompt", self.prompt)
         clayout.addRow("Model", self.model)
         clayout.addRow("Temperature", self.temperature)
-        clayout.addRow("Append global prompt", self.append_global_prompt)
-        clayout.addRow("Clear conversation", self.clear_button)
+        clayout.addRow("Clear conversation", self.clear_conversation)
 
         vlayout = QtWidgets.QVBoxLayout()
         vlayout.addLayout(clayout)
@@ -73,6 +68,7 @@ class ConfigDialog(QtWidgets.QDialog):
             prompt=self.prompt.toPlainText(),
             model=self.model.currentText(),
             temperature=self.temperature.value(),
-            append_global_prompt=self.append_global_prompt.is_checked(),
-            conversation=[] if self.clear_button.isChecked() else self.conversation,
+            conversation=[]
+            if self.clear_conversation.isChecked()
+            else self.conversation,
         )

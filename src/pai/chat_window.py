@@ -1,5 +1,4 @@
 import json
-import re
 
 import ollama as llm
 from PySide6 import QtCore, QtWidgets
@@ -31,7 +30,6 @@ class TextEdit(QtWidgets.QTextEdit):
 
 class ChatWindow(QtWidgets.QMainWindow):
     character: Character
-    system_prompt: str
 
     def __init__(self):
         super().__init__()
@@ -76,7 +74,6 @@ class ChatWindow(QtWidgets.QMainWindow):
 
         # Must be at the end
         config = self.load_config()
-        self.system_prompt = config.general_prompt
         self.load_character(config.current_character)
 
     def reload_messages(self):
@@ -90,24 +87,20 @@ class ChatWindow(QtWidgets.QMainWindow):
             self.add_message(message["content"], message["role"] == "user")
 
         num_token = estimate_num_tokens(conversation)
-        self.character_bar.update_num_token(num_token)
+        self.character_bar.update_num_token(num_token, self.context_size)
 
     def load_config(self):
         return load(CONFIG_FILE_NAME, Config)
 
     def save_config(self):
-        config = Config(
-            current_character=self.character_bar.current_character(),
-            general_prompt=self.system_prompt,
-        )
+        config = Config(current_character=self.character_bar.current_character())
         save(config, CONFIG_FILE_NAME)
 
     def load_character(self, name):
         self.character = load(CHARACTER_DIRECTORY / f"{name}.json", Character)
         self.character_bar.set_character_manually(self.character.name)
+        self.context_size = get_context_size(self.character.model)
         self.reload_messages()
-        self.context_limit = get_context_size(self.character.model) - 256
-        logger.info(f"context limit = {self.context_limit} for {self.character.model}")
 
     def save_character(self):
         c = self.character
@@ -119,7 +112,10 @@ class ChatWindow(QtWidgets.QMainWindow):
         self.save_character()
 
     def show_config_dialog(self):
-        dialog = ConfigDialog(self.character, self)
+        self.configure_character(self.character)
+
+    def configure_character(self, character):
+        dialog = ConfigDialog(character, self)
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             character = dialog.result()
             self.character = character
@@ -128,9 +124,9 @@ class ChatWindow(QtWidgets.QMainWindow):
 
     def new_character(self):
         self.save_character()
-        self.character = Character()
-        self.character_bar.set_character_manually("Assistant")
-        self.show_config_dialog()
+        self.configure_character(Character())
+        self.character_bar.set_character_manually(self.character.name)
+        self.reload_messages()
 
     def switch_character(self, name):
         logger.info(f"switching character to {name}")
@@ -169,16 +165,13 @@ class ChatWindow(QtWidgets.QMainWindow):
         QtCore.QCoreApplication.processEvents()
 
         # always use current system prompt
-        system_prompt = self.character.prompt
-        if self.character.append_global_prompt:
-            system_prompt += "\n" + self.system_prompt
-
+        system_prompt = self.character.prompt or "You are a helpful AI assistant."
         conversation = self.character.conversation
 
         num_token = estimate_num_tokens(conversation)
 
         # enable endless chatting by clipping the conversation if it gets too long
-        while len(conversation) > 2 and num_token > self.context_limit:
+        while len(conversation) > 2 and num_token > self.context_size - 128:
             logging.info(
                 "context nearly full, dropping oldest messages "
                 + f"(lenght of conversation = {len(conversation)})"
@@ -215,7 +208,7 @@ class ChatWindow(QtWidgets.QMainWindow):
             response_widget.set_text(error_message)
 
         num_token = estimate_num_tokens(conversation)
-        self.character_bar.update_num_token(num_token)
+        self.character_bar.update_num_token(num_token, self.context_size)
 
     def keyPressEvent(self, event):
         if event.key() == QtCore.Qt.Key_Return:
@@ -233,13 +226,12 @@ def estimate_num_tokens(conversation):
 
 
 def get_context_size(model):
-    d = llm.show(model)
-    m = re.search(r"num_ctx *(\d+)", d["parameters"])
-    if m:
-        return int(m.group(1))
-    else:
-        logger.warning(f"num_ctx not found {model}")
-        return 4096
+    d = llm.show(model)["model_info"]
+    for key in d:
+        if "context_length" in key:
+            return d[key]
+    logger.warning(f"context length not found {model}")
+    return 4096
 
 
 def save(data_obj, filename):
