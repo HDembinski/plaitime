@@ -5,13 +5,16 @@ import ollama as llm
 from PySide6 import QtCore, QtWidgets
 
 # import pai.dummy_llm as llm
-from pai import CONFIG_DEFAULT, CONFIG_FILE_NAME, CHARACTER_DEFAULT, CHARACTER_DIRECTORY
+from pai import CONFIG_FILE_NAME, CHARACTER_DIRECTORY
 from pai.config_dialog import ConfigDialog
-from pai.top_bar import TopBar
+from pai.character_bar import CharacterBar
 from pai.message_widget import MessageWidget
+from pai.data_classes import Character, Config
+import dataclasses
 import logging
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 class TextEdit(QtWidgets.QTextEdit):
@@ -27,20 +30,22 @@ class TextEdit(QtWidgets.QTextEdit):
 
 
 class ChatWindow(QtWidgets.QMainWindow):
+    character: Character
+    system_prompt: str
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("PAI")
         self.setMinimumSize(600, 500)
 
         # Create top bar
-        self.top_bar = TopBar()
-        self.setMenuWidget(self.top_bar)
-        self.top_bar.config_button.clicked.connect(self.show_config_dialog)
-        self.top_bar.new_button.clicked.connect(self.new_character)
-        self.top_bar.character_selector.currentTextChanged.connect(
-            self.switch_to_character
+        self.character_bar = CharacterBar()
+        self.setMenuWidget(self.character_bar)
+        self.character_bar.config_button.clicked.connect(self.show_config_dialog)
+        self.character_bar.new_button.clicked.connect(self.new_character)
+        self.character_bar.character_selector.currentTextChanged.connect(
+            self.switch_character
         )
-        self.top_bar.clear_button.clicked.connect(self.clear_conversation)
 
         # Create central widget and layout
         central_widget = QtWidgets.QWidget()
@@ -71,93 +76,66 @@ class ChatWindow(QtWidgets.QMainWindow):
 
         # Must be at the end
         config = self.load_config()
-        self.general_system_prompt = config["general_prompt"]
-        self.load_character(config["current_character"])
+        self.system_prompt = config.general_prompt
+        self.load_character(config.current_character)
 
-    def new_messages_widget(self):
+    def reload_messages(self):
         self.messages_widget = QtWidgets.QWidget()
         self.messages_layout = QtWidgets.QVBoxLayout(self.messages_widget)
         self.messages_layout.addStretch()
         self.scroll_area.setWidget(self.messages_widget)
 
-        # replay chat
-        conversation = self.character["conversation"]
+        conversation = self.character.conversation
         for message in conversation:
             self.add_message(message["content"], message["role"] == "user")
 
         num_token = estimate_num_tokens(conversation)
-        self.top_bar.update_num_token(num_token)
+        self.character_bar.update_num_token(num_token)
 
     def load_config(self):
-        config = CONFIG_DEFAULT.copy()
-        try:
-            with open(CONFIG_FILE_NAME, "r") as f:
-                config.update(json.load(f))
-        except IOError:
-            pass
-        return config
+        return load(CONFIG_FILE_NAME, Config)
 
     def save_config(self):
-        with open(CONFIG_FILE_NAME, "w") as f:
-            config = {
-                "current_character": self.top_bar.current_character(),
-                "general_prompt": self.general_system_prompt,
-            }
-            json.dump(config, f, indent=4)
+        config = Config(
+            current_character=self.character_bar.current_character(),
+            general_prompt=self.system_prompt,
+        )
+        save(config, CONFIG_FILE_NAME)
 
     def load_character(self, name):
-        self.character = {**CHARACTER_DEFAULT}
-        try:
-            with open(CHARACTER_DIRECTORY / f"{name}.json") as f:
-                self.character.update(json.load(f))
-            self.top_bar.update(name)
-        except Exception:
-            logger.error(f"loading character {name} failed")
-            self.top_bar.update("Assistant")
-        self.save_config()
-        self.new_messages_widget()
-        self.context_limit = get_context_size(self.character["model"]) - 256
-        logger.info(
-            f"context limit = {self.context_limit} for {self.character['model']}"
-        )
+        self.character = load(CHARACTER_DIRECTORY / f"{name}.json", Character)
+        self.character_bar.set_character_manually(self.character.name)
+        self.reload_messages()
+        self.context_limit = get_context_size(self.character.model) - 256
+        logger.info(f"context limit = {self.context_limit} for {self.character.model}")
 
     def save_character(self):
-        c = self.load_config()
-        name = c["current_character"]
-        if name == "Assistant":
-            return
-        logger.info(f"saving character {name}")
-        with open(CHARACTER_DIRECTORY / f"{name}.json", "w") as f:
-            json.dump(self.character, f, indent=4)
-        self.top_bar.update(name)
+        c = self.character
+        logger.info(f"saving character {c.name}")
+        save(c, CHARACTER_DIRECTORY / f"{c.name}.json")
 
     def save_all(self):
         self.save_config()
         self.save_character()
 
     def show_config_dialog(self):
-        dialog = ConfigDialog(self.top_bar.current_character(), self.character, self)
+        dialog = ConfigDialog(self.character, self)
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            name, c = dialog.result()
-            self.character.update(c)
-            self.top_bar.update(name)
-            self.save_config()
-            self.save_character()
+            character = dialog.result()
+            self.character = character
+            self.character_bar.set_character_manually(character.name)
+            self.reload_messages()
 
     def new_character(self):
-        self.character = {**CHARACTER_DEFAULT}
-        self.top_bar.update("Assistant")
-        self.save_config()
+        self.save_character()
+        self.character = Character()
+        self.character_bar.set_character_manually("Assistant")
         self.show_config_dialog()
 
-    def switch_to_character(self, name):
-        # save_character takes old name from load_config
+    def switch_character(self, name):
+        logger.info(f"switching character to {name}")
         self.save_character()
         self.load_character(name)
-
-    def clear_conversation(self):
-        self.character["conversation"] = []
-        self.new_messages_widget()
 
     def add_message(self, text, is_user=True):
         message = MessageWidget(text, is_user)
@@ -191,13 +169,11 @@ class ChatWindow(QtWidgets.QMainWindow):
         QtCore.QCoreApplication.processEvents()
 
         # always use current system prompt
-        system_prompt = (
-            self.character["prompt"]
-            + "\n"
-            + self.general_system_prompt.format(name=self.top_bar.current_character())
-        )
+        system_prompt = self.character.prompt
+        if self.character.append_global_prompt:
+            system_prompt += "\n" + self.system_prompt
 
-        conversation = self.character["conversation"]
+        conversation = self.character.conversation
 
         num_token = estimate_num_tokens(conversation)
 
@@ -217,10 +193,10 @@ class ChatWindow(QtWidgets.QMainWindow):
             # Generate streaming response using Ollama
             chunks = []
             for response in llm.chat(
-                model=self.character["model"],
+                model=self.character.model,
                 messages=[{"role": "system", "content": system_prompt}] + conversation,
                 stream=True,
-                options={"temperature": self.character["temperature"]},
+                options={"temperature": self.character.temperature},
             ):
                 QtCore.QCoreApplication.processEvents()
                 chunk = response["message"]["content"]
@@ -239,11 +215,11 @@ class ChatWindow(QtWidgets.QMainWindow):
             response_widget.set_text(error_message)
 
         num_token = estimate_num_tokens(conversation)
-        self.top_bar.update_num_token(num_token)
+        self.character_bar.update_num_token(num_token)
 
     def keyPressEvent(self, event):
         if event.key() == QtCore.Qt.Key_Return:
-            self.send_message()
+            self.send_button.click()
             return
         super().keyPressEvent(event)
 
@@ -264,3 +240,19 @@ def get_context_size(model):
     else:
         logger.warning(f"num_ctx not found {model}")
         return 4096
+
+
+def save(data_obj, filename):
+    d = dataclasses.asdict(data_obj)
+    with open(filename, "w") as f:
+        json.dump(d, f, indent=4)
+
+
+def load(filename, cls):
+    try:
+        with open(filename) as f:
+            d = json.load(f)
+        return cls(**d)
+    except Exception as e:
+        logger.error(f"loading of {filename} failed:\n{e}")
+        return cls()
