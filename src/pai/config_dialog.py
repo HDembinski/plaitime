@@ -36,14 +36,22 @@ class ConfigDialog(QtWidgets.QDialog):
         self.temperature.setSingleStep(0.1)
         self.temperature.setValue(character.temperature)
 
+        self.save_conversation = QtWidgets.QCheckBox()
+        self.save_conversation.setChecked(character.save_conversation)
+
         self.clear_conversation = QtWidgets.QCheckBox()
+        self.clear_conversation.setChecked(not character.save_conversation)
+
+        self.delete_character = QtWidgets.QCheckBox()
 
         clayout = QtWidgets.QFormLayout()
         clayout.addRow("Name", self.name)
         clayout.addRow("Prompt", self.prompt)
         clayout.addRow("Model", self.model)
         clayout.addRow("Temperature", self.temperature)
+        clayout.addRow("Save conversation", self.save_conversation)
         clayout.addRow("Clear conversation", self.clear_conversation)
+        clayout.addRow("Delete character", self.delete_character)
 
         vlayout = QtWidgets.QVBoxLayout()
         vlayout.addLayout(clayout)
@@ -63,12 +71,17 @@ class ConfigDialog(QtWidgets.QDialog):
         self.conversation = character.conversation
 
     def result(self):
-        return Character(
-            name=self.name.text(),
-            prompt=self.prompt.toPlainText(),
-            model=self.model.currentText(),
-            temperature=self.temperature.value(),
-            conversation=[]
-            if self.clear_conversation.isChecked()
-            else self.conversation,
+        return (
+            self.name.text()
+            if self.delete_character.isChecked()
+            else Character(
+                name=self.name.text(),
+                prompt=self.prompt.toPlainText(),
+                model=self.model.currentText(),
+                temperature=self.temperature.value(),
+                conversation=[]
+                if self.clear_conversation.isChecked()
+                else self.conversation,
+                save_conversation=self.save_conversation.isChecked(),
+            )
         )

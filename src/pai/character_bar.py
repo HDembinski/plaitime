@@ -7,12 +7,18 @@ class CharacterBar(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
+        size_policy = QtWidgets.QSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+        )
+        self.setSizePolicy(size_policy)
+
         self.config_button = QtWidgets.QPushButton("Configure")
         self.character_selector = QtWidgets.QComboBox()
         self.new_button = QtWidgets.QPushButton("New character")
         self.num_token = QtWidgets.QProgressBar()
         self.num_token.setFormat("%v token (est.)")
         self.num_token.setMinimum(0)
+        self.num_token.setSizePolicy(size_policy)
 
         layout = QtWidgets.QHBoxLayout()
         layout.addWidget(self.config_button)
@@ -38,7 +44,8 @@ class CharacterBar(QtWidgets.QWidget):
 
     def update_num_token(self, num: int, size: int):
         self.num_token.setMaximum(size)
-        self.num_token.setValue(num)
+        self.num_token.setValue(max(num, 0))
+        self.num_token.setDisabled(num < 0)
 
 
 def get_character_names():

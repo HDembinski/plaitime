@@ -1,35 +1,53 @@
+import copy
+import dataclasses
 import json
+import logging
+from contextlib import contextmanager
 
 import ollama as llm
 from PySide6 import QtCore, QtWidgets
 
 # import pai.dummy_llm as llm
-from pai import CONFIG_FILE_NAME, CHARACTER_DIRECTORY
-from pai.config_dialog import ConfigDialog
+from pai import CHARACTER_DIRECTORY, CONFIG_FILE_NAME
 from pai.character_bar import CharacterBar
-from pai.message_widget import MessageWidget
+from pai.config_dialog import ConfigDialog
 from pai.data_classes import Character, Config
-import dataclasses
-import logging
+from pai.message_widget import MessageWidget
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-class TextEdit(QtWidgets.QTextEdit):
-    def __init__(self, callback):
-        self.callback = callback
-        super().__init__()
+@contextmanager
+def generating(self):
+    self.is_generating = True
+    self.stop_generation = False
+    try:
+        yield
+    finally:
+        self.is_generating = False
+        self.stop_generation = False
+
+
+class InputBox(QtWidgets.QTextEdit):
+    sendMessage = QtCore.Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
 
     def keyPressEvent(self, event):
-        if event.key() == QtCore.Qt.Key_Return:
-            self.callback()
-            return
-        super().keyPressEvent(event)
+        if event.key() == QtCore.Qt.Key_Return and not (
+            event.modifiers() & QtCore.Qt.KeyboardModifier.ShiftModifier
+        ):
+            self.sendMessage.emit()
+        else:
+            super().keyPressEvent(event)
 
 
 class ChatWindow(QtWidgets.QMainWindow):
-    character: Character
+    character: Character = Character()
+    is_generating: bool = False
+    stop_generation: bool = False
 
     def __init__(self):
         super().__init__()
@@ -61,9 +79,10 @@ class ChatWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.scroll_area)
 
         # Create input area
-        self.input_box = TextEdit(self.send_message)
+        self.input_box = InputBox()
         self.input_box.setMaximumHeight(100)
         self.input_box.setPlaceholderText("Type your message here...")
+        self.input_box.sendMessage.connect(self.send_message)
 
         layout.addWidget(self.input_box)
 
@@ -83,11 +102,14 @@ class ChatWindow(QtWidgets.QMainWindow):
         self.scroll_area.setWidget(self.messages_widget)
 
         conversation = self.character.conversation
-        for message in conversation:
-            self.add_message(message["content"], message["role"] == "user")
+        n = len(conversation)
+        for i, message in enumerate(conversation):
+            if i < n - 1 or message["role"] == "assistant":
+                self.add_message(message["content"], message["role"] == "user")
+            else:
+                self.input_box.setText(message["content"])
 
-        num_token = estimate_num_tokens(conversation)
-        self.character_bar.update_num_token(num_token, self.context_size)
+        self.character_bar.update_num_token(-1, self.context_size)
 
     def load_config(self):
         return load(CONFIG_FILE_NAME, Config)
@@ -96,8 +118,19 @@ class ChatWindow(QtWidgets.QMainWindow):
         config = Config(current_character=self.character_bar.current_character())
         save(config, CONFIG_FILE_NAME)
 
-    def load_character(self, name):
-        self.character = load(CHARACTER_DIRECTORY / f"{name}.json", Character)
+    def load_character(self, name: str):
+        if not name:
+            for fname in sorted(CHARACTER_DIRECTORY.glob("*.json")):
+                name = fname.stem
+                break
+            character = (
+                load(CHARACTER_DIRECTORY / f"{name}.json", Character)
+                if name
+                else Character()
+            )
+        else:
+            character = load(CHARACTER_DIRECTORY / f"{name}.json", Character)
+        self.character = character
         self.character_bar.set_character_manually(self.character.name)
         self.context_size = get_context_size(self.character.model)
         self.reload_messages()
@@ -105,7 +138,14 @@ class ChatWindow(QtWidgets.QMainWindow):
     def save_character(self):
         c = self.character
         logger.info(f"saving character {c.name}")
+        if not c.save_conversation:
+            c = copy.deepcopy(c)
+            c.conversation = []
         save(c, CHARACTER_DIRECTORY / f"{c.name}.json")
+
+    def delete_character(self, name: str):
+        logger.info(f"deleting character {name}")
+        (CHARACTER_DIRECTORY / f"{name}.json").unlink()
 
     def save_all(self):
         self.save_config()
@@ -118,9 +158,13 @@ class ChatWindow(QtWidgets.QMainWindow):
         dialog = ConfigDialog(character, self)
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             character = dialog.result()
-            self.character = character
-            self.character_bar.set_character_manually(character.name)
-            self.reload_messages()
+            if isinstance(character, str):
+                self.delete_character(character)
+                self.load_character(None)
+            else:
+                self.character = character
+                self.character_bar.set_character_manually(character.name)
+                self.reload_messages()
 
     def new_character(self):
         self.save_character()
@@ -139,6 +183,30 @@ class ChatWindow(QtWidgets.QMainWindow):
         if not is_user and not text:
             message.set_thinking()
         return message
+
+    def remove_messages(self, amount: int):
+        assert amount > 0
+        children = self.messages_widget.children()
+        for child in reversed(children):
+            child.setParent(None)
+            del child
+            amount -= 1
+            if amount == 0:
+                break
+
+    def undo_last_response(self):
+        conversation = self.character.conversation
+        if self.is_generating:
+            self.stop_generation = True
+            user_message = conversation.pop()
+            self.input_box.setText(user_message["content"])
+            # see code in generate_message
+        else:
+            if not self.character.conversation:
+                return
+            self.input_box.setText(conversation[-2]["content"])
+            conversation[:] = conversation[:-2]
+        self.remove_messages(2)
 
     def scroll_to_bottom(self, _, vmax):
         self.vscrollbar.setValue(vmax)
@@ -161,60 +229,66 @@ class ChatWindow(QtWidgets.QMainWindow):
             # self.input_box.setFocus()
 
     def generate_response(self, user_input):
-        response_widget = self.add_message("", False)
-        QtCore.QCoreApplication.processEvents()
-
-        # always use current system prompt
-        system_prompt = self.character.prompt or "You are a helpful AI assistant."
         conversation = self.character.conversation
-
-        num_token = estimate_num_tokens(conversation)
-
-        # enable endless chatting by clipping the conversation if it gets too long
-        while len(conversation) > 2 and num_token > self.context_size - 128:
-            logging.info(
-                "context nearly full, dropping oldest messages "
-                + f"(lenght of conversation = {len(conversation)})"
-            )
-            # drop oldest user message and response
-            conversation = conversation[2:]
 
         # add user message to conversation history
         conversation.append({"role": "user", "content": user_input})
 
-        try:
-            # Generate streaming response using Ollama
-            chunks = []
-            for response in llm.chat(
-                model=self.character.model,
-                messages=[{"role": "system", "content": system_prompt}] + conversation,
-                stream=True,
-                options={"temperature": self.character.temperature},
-            ):
-                QtCore.QCoreApplication.processEvents()
-                chunk = response["message"]["content"]
-                chunks.append(chunk)
-                response_widget.set_text("".join(chunks))
+        # always use current system prompt
+        system_prompt = self.character.prompt or "You are a helpful AI assistant."
 
-            # Add assistant's response to conversation history
-            conversation.append({"role": "assistant", "content": "".join(chunks)})
+        # enable endless chatting by clipping the part of the conversation
+        # that the llm can see, but keep the system prompt at all times
+        conversation_window = []
+        num_token = len(system_prompt)
+        i = len(conversation) - 1
+        while num_token < self.context_size - 256 and i >= 0:
+            message = conversation[i]
+            conversation_window.append(message)
+            i -= 1
+            num_token += len(message["content"])
+        conversation_window.append({"role": "system", "content": system_prompt})
+        conversation_window.reverse()
 
-        except Exception as e:
-            error_message = f"Error generating response: {str(e)}\n\n"
-            error_message += "Please make sure:\n"
-            error_message += "1. Ollama is installed and running\n"
-            error_message += f"2. The model '{self.character['model']}' is available\n"
-            error_message += "3. You can run 'ollama run modelname' in terminal"
-            response_widget.set_text(error_message)
+        with generating(self):
+            response_widget = self.add_message("", False)
+            QtCore.QCoreApplication.processEvents()
+            try:
+                # Generate streaming response using Ollama
+                chunks = []
+                for response in llm.chat(
+                    model=self.character.model,
+                    messages=conversation_window,
+                    stream=True,
+                    options={"temperature": self.character.temperature},
+                ):
+                    QtCore.QCoreApplication.processEvents()
+                    if self.stop_generation:
+                        raise StopIteration
+                    chunk = response["message"]["content"]
+                    chunks.append(chunk)
+                    response_widget.set_text("".join(chunks))
 
-        num_token = estimate_num_tokens(conversation)
-        self.character_bar.update_num_token(num_token, self.context_size)
+                # Add assistant's response to conversation history
+                conversation.append({"role": "assistant", "content": "".join(chunks)})
+
+            except Exception as e:
+                error_message = f"""Error generating response: {str(e)}\n\n
+Please make sure that the model '{self.character.model}' is available.
+You can run 'ollama run {self.character.model}' in terminal to check."""
+                response_widget.set_text(error_message)
+            except StopIteration:
+                pass
+
+            num_token = estimate_num_tokens(conversation)
+            self.character_bar.update_num_token(num_token, self.context_size)
 
     def keyPressEvent(self, event):
-        if event.key() == QtCore.Qt.Key_Return:
-            self.send_button.click()
-            return
-        super().keyPressEvent(event)
+        key = event.key()
+        if key == QtCore.Qt.Key_Escape:
+            self.undo_last_response()
+        else:
+            super().keyPressEvent(event)
 
 
 def estimate_num_tokens(conversation):
