@@ -3,8 +3,12 @@ from mistune import html
 
 
 class MessageWidget(QtWidgets.QFrame):
-    def __init__(self, text="", is_user=True, parent=None):
+    _role: str
+    _content: str
+
+    def __init__(self, text: str, role: str, parent=None):
         super().__init__(parent)
+
         self.setFrameStyle(QtWidgets.QFrame.Shape.Box | QtWidgets.QFrame.Shadow.Raised)
 
         layout = QtWidgets.QVBoxLayout()
@@ -16,9 +20,11 @@ class MessageWidget(QtWidgets.QFrame):
         self.message.setTextInteractionFlags(
             QtCore.Qt.TextInteractionFlag.TextSelectableByMouse
         )
-        self.set_text(text)
 
-        if is_user:
+        self._role = role
+        self.set_text(text)  # this sets content
+
+        if role == "user":
             self.setStyleSheet("""
                 QFrame {
                     background-color: #F5F5F5;
@@ -39,7 +45,14 @@ class MessageWidget(QtWidgets.QFrame):
         layout.addWidget(self.message)
 
     def set_text(self, text):
+        self._content = text
         self.message.setText(html(text))
 
     def set_thinking(self):
         self.message.setText("...")
+
+    def asdict(self):
+        return {"role": self.role, "content": self.content}
+
+    role = QtCore.Property(str, lambda self: self._role)
+    content = QtCore.Property(str, lambda self: self._content)
