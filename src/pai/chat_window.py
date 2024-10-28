@@ -1,11 +1,10 @@
-import copy
 import dataclasses
 import json
 import logging
 from contextlib import contextmanager
 
 import ollama as llm
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtWidgets, QtGui
 
 # import pai.dummy_llm as llm
 from pai import CHARACTER_DIRECTORY, CONFIG_FILE_NAME
@@ -19,6 +18,7 @@ logger.setLevel(logging.INFO)
 
 
 CHARACTERS_PER_TOKEN = 4  # on average
+CONTEXT_MARGIN = 512
 
 
 @contextmanager
@@ -37,14 +37,16 @@ class InputBox(QtWidgets.QTextEdit):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setAcceptRichText(False)
 
     def keyPressEvent(self, event):
-        if event.key() == QtCore.Qt.Key_Return and not (
-            event.modifiers() & QtCore.Qt.KeyboardModifier.ShiftModifier
-        ):
-            self.sendMessage.emit()
-        else:
-            super().keyPressEvent(event)
+        mod = event.modifiers()
+        match event.key():
+            case QtCore.Qt.Key_Return:
+                if not (mod & QtCore.Qt.KeyboardModifier.ShiftModifier):
+                    self.sendMessage.emit()
+                    return
+        super().keyPressEvent(event)
 
 
 class ChatWindow(QtWidgets.QMainWindow):
@@ -156,6 +158,7 @@ class ChatWindow(QtWidgets.QMainWindow):
         self.save_character()
 
     def show_config_dialog(self):
+        self.save_character()
         self.configure_character(self.character)
 
     def configure_character(self, character):
@@ -230,9 +233,8 @@ class ChatWindow(QtWidgets.QMainWindow):
             # self.input_box.setFocus()
 
     def generate_response(self, user_input):
-        # always use current system prompt
+        # we always use current system prompt
         system_prompt = self.character.prompt or "You are a helpful AI assistant."
-
         messages = self.get_messages()
 
         # enable endless chatting by clipping the part of the conversation
@@ -240,7 +242,7 @@ class ChatWindow(QtWidgets.QMainWindow):
         conversation_window = []
         num_token = len(system_prompt)
         i = len(messages) - 1
-        while num_token < self.context_size - 256 and i >= 0:
+        while num_token < self.context_size - CONTEXT_MARGIN and i >= 0:
             message = messages[i]
             conversation_window.append(message.asdict())
             i -= 1
