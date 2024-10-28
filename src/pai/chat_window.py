@@ -18,6 +18,9 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
+CHARACTERS_PER_TOKEN = 4  # on average
+
+
 @contextmanager
 def generating(self):
     self.is_generating = True
@@ -134,6 +137,8 @@ class ChatWindow(QtWidgets.QMainWindow):
         self.character_bar.set_character_manually(self.character.name)
         self.context_size = get_context_size(self.character.model)
         self.reload_messages()
+        num_token = estimate_num_tokens(character.conversation)
+        self.character_bar.update_num_token(num_token, self.context_size)
 
     def save_character(self):
         c = self.character
@@ -247,6 +252,7 @@ class ChatWindow(QtWidgets.QMainWindow):
             conversation_window.append(message)
             i -= 1
             num_token += len(message["content"])
+        num_token /= CHARACTERS_PER_TOKEN
         conversation_window.append({"role": "system", "content": system_prompt})
         conversation_window.reverse()
 
@@ -296,7 +302,7 @@ def estimate_num_tokens(conversation):
     num_char = 0
     for message in conversation:
         num_char += len(message["content"])
-    return num_char / 4
+    return num_char / CHARACTERS_PER_TOKEN
 
 
 def get_context_size(model):
