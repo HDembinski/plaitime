@@ -249,9 +249,6 @@ class ChatWindow(QtWidgets.QMainWindow):
         conversation_window.append({"role": "system", "content": system_prompt})
         conversation_window.reverse()
 
-        for x in conversation_window:
-            print(x)
-
         with generating(self):
             response_widget = self.add_message("", "assistant")
             QtCore.QCoreApplication.processEvents()
