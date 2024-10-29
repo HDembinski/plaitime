@@ -2,27 +2,18 @@ from PySide6 import QtWidgets, QtCore
 from mistune import html
 
 
-class MessageWidget(QtWidgets.QFrame):
+class MessageWidget(QtWidgets.QLabel):
     _role: str
     _content: str
 
     def __init__(self, text: str, role: str, parent=None):
         super().__init__(parent)
 
-        self.setFrameStyle(QtWidgets.QFrame.Shape.Box | QtWidgets.QFrame.Shadow.Raised)
-
-        layout = QtWidgets.QVBoxLayout()
-        self.setLayout(layout)
-
-        self.message = QtWidgets.QLabel()
-        self.message.setWordWrap(True)
-        self.message.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
-        self.message.setTextInteractionFlags(
+        self.setWordWrap(True)
+        self.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
+        self.setTextInteractionFlags(
             QtCore.Qt.TextInteractionFlag.TextSelectableByMouse
         )
-
-        self._role = role
-        self.set_text(text)  # this sets content
 
         if role == "user":
             self.setStyleSheet("""
@@ -42,14 +33,19 @@ class MessageWidget(QtWidgets.QFrame):
                 }
             """)
 
-        layout.addWidget(self.message)
+        self._role = role
+        self.set_text(text)  # this sets content
 
     def set_text(self, text):
         self._content = text
-        self.message.setText(html(text))
+        if not text:
+            self.setText("<em>Thinking...</em>")
+        else:
+            self.setText(html(text))
 
-    def set_thinking(self):
-        self.message.setText("...")
+    def add_text(self, text):
+        self._content += text
+        self.setText(html(self._content))
 
     def asdict(self):
         return {"role": self.role, "content": self.content}

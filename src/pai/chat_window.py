@@ -1,10 +1,9 @@
 import dataclasses
 import json
 import logging
-from contextlib import contextmanager
 
 import ollama as llm
-from PySide6 import QtCore, QtWidgets, QtGui
+from PySide6 import QtCore, QtWidgets
 
 # import pai.dummy_llm as llm
 from pai import CHARACTER_DIRECTORY, CONFIG_FILE_NAME
@@ -12,24 +11,11 @@ from pai.character_bar import CharacterBar
 from pai.config_dialog import ConfigDialog
 from pai.data_classes import Character, Config
 from pai.message_widget import MessageWidget
+from pai.util import get_messages, estimate_num_tokens
+from pai.generator import Generator
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-
-
-CHARACTERS_PER_TOKEN = 4  # on average
-CONTEXT_MARGIN = 512
-
-
-@contextmanager
-def generating(self):
-    self.is_generating = True
-    self.stop_generation = False
-    try:
-        yield
-    finally:
-        self.is_generating = False
-        self.stop_generation = False
 
 
 class InputBox(QtWidgets.QTextEdit):
@@ -51,8 +37,7 @@ class InputBox(QtWidgets.QTextEdit):
 
 class ChatWindow(QtWidgets.QMainWindow):
     character: Character = Character()
-    is_generating: bool = False
-    stop_generation: bool = False
+    generator: Generator | None = None
 
     def __init__(self):
         super().__init__()
@@ -87,13 +72,13 @@ class ChatWindow(QtWidgets.QMainWindow):
         self.input_box = InputBox()
         self.input_box.setMaximumHeight(100)
         self.input_box.setPlaceholderText("Type your message here...")
-        self.input_box.sendMessage.connect(self.send_message)
+        self.input_box.sendMessage.connect(self.send_message_and_generate_response)
 
         layout.addWidget(self.input_box)
 
         # Create send button
         self.send_button = QtWidgets.QPushButton("Send")
-        self.send_button.clicked.connect(self.send_message)
+        self.send_button.clicked.connect(self.send_message_and_generate_response)
         layout.addWidget(self.send_button)
 
         # Must be at the end
@@ -145,7 +130,7 @@ class ChatWindow(QtWidgets.QMainWindow):
         logger.info(f"saving character {c.name}")
         c.conversation = []
         if c.save_conversation:
-            for message in self.get_messages():
+            for message in get_messages(self.messages_widget):
                 c.conversation.append(message.asdict())
         save(c, CHARACTER_DIRECTORY / f"{c.name}.json")
 
@@ -171,6 +156,7 @@ class ChatWindow(QtWidgets.QMainWindow):
             else:
                 self.character = character
                 self.character_bar.set_character_manually(character.name)
+                self.context_size = get_context_size(self.character.model)
                 self.load_messages(character)
 
     def new_character(self):
@@ -186,23 +172,14 @@ class ChatWindow(QtWidgets.QMainWindow):
     def add_message(self, text, role):
         message = MessageWidget(text, role)
         self.messages_layout.addWidget(message)
-        if role == "assistant" and not text:
-            message.set_thinking()
         return message
 
-    def get_messages(self):
-        return [
-            child
-            for child in self.messages_widget.children()
-            if isinstance(child, MessageWidget)
-        ]
-
     def undo_last_response(self):
-        messages = self.get_messages()
-        if self.is_generating:
+        messages = get_messages(self.messages_widget)
+        if self.generator and self.generator.isRunning():
             assert len(messages) >= 2
-            self.stop_generation = True
-            # see code in generate_message
+            self.generator.interrupt = True
+            self.generator.wait()
         else:
             if not messages:
                 return
@@ -218,65 +195,31 @@ class ChatWindow(QtWidgets.QMainWindow):
     def scroll_to_bottom(self, _, vmax):
         self.vscrollbar.setValue(vmax)
 
-    def send_message(self):
+    def send_message_and_generate_response(self):
         user_text = self.input_box.toPlainText().strip()
+        if not user_text:
+            return
 
-        if user_text:
-            self.input_box.clear()
-            self.send_button.setEnabled(False)
+        self.input_box.clear()
+        self.send_button.setEnabled(False)
+        self.input_box.setDisabled(True)
+        self.add_message(user_text, "user")
+        self.generate_response()
 
-            self.add_message(user_text, "user")
-            self.generate_response(user_text)
+    def generator_finished(self):
+        self.send_button.setEnabled(True)
+        self.input_box.setEnabled(True)
+        self.generator = None
 
-            # Re-enable input in the main thread
-            self.send_button.setEnabled(True)
-            # self.input_box.setFocus()
-
-    def generate_response(self, user_input):
-        # we always use current system prompt
-        system_prompt = self.character.prompt or "You are a helpful AI assistant."
-        messages = self.get_messages()
-
-        # enable endless chatting by clipping the part of the conversation
-        # that the llm can see, but keep the system prompt at all times
-        conversation_window = []
-        num_token = len(system_prompt)
-        i = len(messages) - 1
-        while num_token < self.context_size - CONTEXT_MARGIN and i >= 0:
-            message = messages[i]
-            conversation_window.append(message.asdict())
-            i -= 1
-            num_token += len(message.content)
-        num_token /= CHARACTERS_PER_TOKEN
-        conversation_window.append({"role": "system", "content": system_prompt})
-        conversation_window.reverse()
-
-        with generating(self):
-            response_widget = self.add_message("", "assistant")
-            QtCore.QCoreApplication.processEvents()
-            try:
-                # Generate streaming response using Ollama
-                chunks = []
-                for response in llm.chat(
-                    model=self.character.model,
-                    messages=conversation_window,
-                    stream=True,
-                    options={"temperature": self.character.temperature},
-                ):
-                    QtCore.QCoreApplication.processEvents()
-                    if self.stop_generation:
-                        break
-                    chunk = response["message"]["content"]
-                    chunks.append(chunk)
-                    response_widget.set_text("".join(chunks))
-            except Exception as e:
-                error_message = f"""Error generating response: {str(e)}\n\n
-Please make sure that the model '{self.character.model}' is available.
-You can run 'ollama run {self.character.model}' in terminal to check."""
-                response_widget.set_text(error_message)
-
-        num_token = estimate_num_tokens(system_prompt, [x.asdict() for x in messages])
-        self.character_bar.update_num_token(num_token, self.context_size)
+    def generate_response(self):
+        self.generator = Generator(
+            self.character, get_messages(self.messages_widget), self.context_size
+        )
+        mw = self.add_message("", "assistant")
+        self.generator.increment.connect(mw.add_text)
+        self.generator.error.connect(mw.set_text)
+        self.generator.finished.connect(self.generator_finished)
+        self.generator.start()
 
     def keyPressEvent(self, event):
         key = event.key()
@@ -284,14 +227,6 @@ You can run 'ollama run {self.character.model}' in terminal to check."""
             self.undo_last_response()
         else:
             super().keyPressEvent(event)
-
-
-def estimate_num_tokens(prompt, conversation):
-    # estimate number of token
-    num_char = len(prompt)
-    for message in conversation:
-        num_char += len(message["content"])
-    return num_char / CHARACTERS_PER_TOKEN
 
 
 def get_context_size(model):
