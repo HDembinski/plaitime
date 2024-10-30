@@ -15,6 +15,7 @@ class CharacterBar(QtWidgets.QWidget):
         self.config_button = QtWidgets.QPushButton("Configure")
         self.character_selector = QtWidgets.QComboBox()
         self.new_button = QtWidgets.QPushButton("New character")
+        self.clipboard_button = QtWidgets.QPushButton("Clipboard")
         self.num_token = QtWidgets.QProgressBar()
         self.num_token.setFormat("%v token (est.)")
         self.num_token.setMinimum(0)
@@ -24,6 +25,7 @@ class CharacterBar(QtWidgets.QWidget):
         layout.addWidget(self.config_button)
         layout.addWidget(self.character_selector)
         layout.addWidget(self.new_button)
+        layout.addWidget(self.clipboard_button)
         layout.addWidget(self.num_token)
         self.setLayout(layout)
 

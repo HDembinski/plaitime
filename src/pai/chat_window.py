@@ -3,7 +3,7 @@ import json
 import logging
 
 import ollama as llm
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtWidgets, QtGui
 
 # import pai.dummy_llm as llm
 from pai import CHARACTER_DIRECTORY, CONFIG_FILE_NAME
@@ -11,7 +11,7 @@ from pai.character_bar import CharacterBar
 from pai.config_dialog import ConfigDialog
 from pai.data_classes import Character, Config
 from pai.message_widget import MessageWidget
-from pai.util import get_messages, estimate_num_tokens
+from pai.util import estimate_num_tokens
 from pai.generator import Generator
 
 logger = logging.getLogger(__name__)
@@ -52,6 +52,7 @@ class ChatWindow(QtWidgets.QMainWindow):
         self.character_bar.character_selector.currentTextChanged.connect(
             self.switch_character
         )
+        self.character_bar.clipboard_button.clicked.connect(self.copy_to_clipboard)
 
         # Create central widget and layout
         central_widget = QtWidgets.QWidget()
@@ -130,20 +131,26 @@ class ChatWindow(QtWidgets.QMainWindow):
         logger.info(f"saving character {c.name}")
         c.conversation = []
         if c.save_conversation:
-            for message in get_messages(self.messages_widget):
+            for message in self.get_messages():
                 c.conversation.append(message.asdict())
         save(c, CHARACTER_DIRECTORY / f"{c.name}.json")
 
     def delete_character(self, name: str):
         logger.info(f"deleting character {name}")
-        (CHARACTER_DIRECTORY / f"{name}.json").unlink()
+        # may not exist
+        path = CHARACTER_DIRECTORY / f"{name}.json"
+        if path.exists():
+            path.unlink()
 
     def save_all(self):
         self.save_config()
         self.save_character()
 
     def show_config_dialog(self):
-        self.save_character()
+        c = self.character
+        c.conversation = []
+        for message in self.get_messages():
+            c.conversation.append(message.asdict())
         self.configure_character(self.character)
 
     def configure_character(self, character):
@@ -175,7 +182,7 @@ class ChatWindow(QtWidgets.QMainWindow):
         return message
 
     def undo_last_response(self):
-        messages = get_messages(self.messages_widget)
+        messages = self.get_messages()
         if self.generator and self.generator.isRunning():
             assert len(messages) >= 2
             self.generator.interrupt = True
@@ -213,13 +220,25 @@ class ChatWindow(QtWidgets.QMainWindow):
 
     def generate_response(self):
         self.generator = Generator(
-            self.character, get_messages(self.messages_widget), self.context_size
+            self.character, self.get_messages(), self.context_size
         )
         mw = self.add_message("", "assistant")
         self.generator.increment.connect(mw.add_text)
         self.generator.error.connect(mw.set_text)
         self.generator.finished.connect(self.generator_finished)
         self.generator.start()
+
+    def copy_to_clipboard(self):
+        messages = self.get_messages()
+        clipboard = QtGui.QGuiApplication.clipboard()
+        clipboard.setText("\n\n".join(m.content for m in messages))
+
+    def get_messages(self):
+        return [
+            child
+            for child in self.messages_widget.children()
+            if isinstance(child, MessageWidget)
+        ]
 
     def keyPressEvent(self, event):
         key = event.key()

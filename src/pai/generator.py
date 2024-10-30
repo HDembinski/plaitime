@@ -22,14 +22,13 @@ class Generator(QtCore.QThread):
         # enable endless chatting by clipping the part of the conversation
         # that the llm can see, but keep the system prompt at all times
         conversation_window = []
-        num_token = len(system_prompt)
+        num_token = len(system_prompt) / CHARACTERS_PER_TOKEN
         i = len(messages) - 1
         while num_token < self.context_size - CONTEXT_MARGIN and i >= 0:
             message = messages[i]
             conversation_window.append(message.asdict())
             i -= 1
-            num_token += len(message.content)
-        num_token /= CHARACTERS_PER_TOKEN
+            num_token += len(message.content) / CHARACTERS_PER_TOKEN
         conversation_window.append({"role": "system", "content": system_prompt})
         conversation_window.reverse()
 
