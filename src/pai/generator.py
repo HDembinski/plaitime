@@ -26,7 +26,7 @@ class Generator(QtCore.QThread):
         i = len(messages) - 1
         while num_token < self.context_size - CONTEXT_MARGIN and i >= 0:
             message = messages[i]
-            conversation_window.append(message.asdict())
+            conversation_window.append(message.dict())
             i -= 1
             num_token += len(message.content) / CHARACTERS_PER_TOKEN
         conversation_window.append({"role": "system", "content": system_prompt})

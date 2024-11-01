@@ -1,6 +1,4 @@
 from PySide6 import QtWidgets
-from pai import CHARACTER_DIRECTORY
-import json
 
 
 class CharacterBar(QtWidgets.QWidget):
@@ -16,10 +14,7 @@ class CharacterBar(QtWidgets.QWidget):
         self.character_selector = QtWidgets.QComboBox()
         self.new_button = QtWidgets.QPushButton("New character")
         self.clipboard_button = QtWidgets.QPushButton("Clipboard")
-        self.num_token = QtWidgets.QProgressBar()
-        self.num_token.setFormat("%v token (est.)")
-        self.num_token.setMinimum(0)
-        self.num_token.setSizePolicy(size_policy)
+        self.num_token = QtWidgets.QLabel()
 
         layout = QtWidgets.QHBoxLayout()
         layout.addWidget(self.config_button)
@@ -29,8 +24,7 @@ class CharacterBar(QtWidgets.QWidget):
         layout.addWidget(self.num_token)
         self.setLayout(layout)
 
-    def set_character_manually(self, new_name):
-        names = get_character_names()
+    def set_character_manually(self, names, new_name):
         if new_name not in names:
             names.append(new_name)
         names.sort()
@@ -45,15 +39,9 @@ class CharacterBar(QtWidgets.QWidget):
         return self.character_selector.currentText()
 
     def update_num_token(self, num: int, size: int):
-        self.num_token.setMaximum(size)
-        self.num_token.setValue(max(num, 0))
-        self.num_token.setDisabled(num < 0)
-
-
-def get_character_names():
-    names = []
-    for fn in CHARACTER_DIRECTORY.glob("*.json"):
-        with open(fn) as f:
-            name = json.load(f)["name"]
-            names.append(name)
-    return names
+        if num < 0:
+            text = ""
+        else:
+            k = 1024
+            text = f"{num/k:.1f} (est) | {size/k:.0f} k token"
+        self.num_token.setText(text)

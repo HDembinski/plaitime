@@ -1,14 +1,14 @@
 from PySide6 import QtWidgets
 import ollama
-from pai.data_classes import Character
-from typing import List
+from pai.data_models import Character, Memory
 
 
 class ConfigDialog(QtWidgets.QDialog):
-    conversation: List[str]
-
-    def __init__(self, character: Character, parent=None):
+    def __init__(self, character: Character, memory: Memory, *, parent=None):
         super().__init__(parent)
+
+        self.memory = memory
+
         self.setWindowTitle("Character configuration")
         self.setMinimumWidth(500)
 
@@ -68,20 +68,21 @@ class ConfigDialog(QtWidgets.QDialog):
         vlayout.addWidget(button_box)
         self.setLayout(vlayout)
 
-        self.conversation = character.conversation
-
     def result(self):
-        return (
-            self.name.text()
-            if self.delete_character.isChecked()
-            else Character(
-                name=self.name.text(),
-                prompt=self.prompt.toPlainText(),
-                model=self.model.currentText(),
-                temperature=self.temperature.value(),
-                conversation=[]
-                if self.clear_conversation.isChecked()
-                else self.conversation,
-                save_conversation=self.save_conversation.isChecked(),
+        if self.delete_character.isChecked():
+            return self.name.text()
+        else:
+            memory = self.memory
+            if self.clear_conversation.isChecked():
+                memory.messages = []
+
+            return (
+                Character(
+                    name=self.name.text(),
+                    prompt=self.prompt.toPlainText(),
+                    model=self.model.currentText(),
+                    temperature=self.temperature.value(),
+                    save_conversation=self.save_conversation.isChecked(),
+                ),
+                memory,
             )
-        )

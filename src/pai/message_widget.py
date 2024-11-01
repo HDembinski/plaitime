@@ -3,10 +3,10 @@ from mistune import html
 
 
 class MessageWidget(QtWidgets.QLabel):
-    _role: str
-    _content: str
+    role: str
+    content: str
 
-    def __init__(self, text: str, role: str, parent=None):
+    def __init__(self, role: str, text: str, parent=None):
         super().__init__(parent)
 
         self.setWordWrap(True)
@@ -33,22 +33,19 @@ class MessageWidget(QtWidgets.QLabel):
                 }
             """)
 
-        self._role = role
+        self.role = role
         self.set_text(text)  # this sets content
 
     def set_text(self, text):
-        self._content = text
+        self.content = text
         if not text:
             self.setText("<em>Thinking...</em>")
         else:
             self.setText(html(text))
 
     def add_text(self, text):
-        self._content += text
-        self.setText(html(self._content))
+        self.content += text
+        self.setText(html(self.content))
 
-    def asdict(self):
+    def dict(self):
         return {"role": self.role, "content": self.content}
-
-    role = QtCore.Property(str, lambda self: self._role)
-    content = QtCore.Property(str, lambda self: self._content)
