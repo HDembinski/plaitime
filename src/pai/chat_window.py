@@ -209,13 +209,14 @@ class ChatWindow(QtWidgets.QMainWindow):
 
         self.input_box.clear()
         self.send_button.setEnabled(False)
-        self.input_box.setDisabled(True)
+        self.input_box.setEnabled(False)
         self.add_message(user_text, "user")
         self.generate_response()
 
     def generator_finished(self):
         self.send_button.setEnabled(True)
         self.input_box.setEnabled(True)
+        self.input_box.setFocus()
         self.generator = None
 
     def generate_response(self):
