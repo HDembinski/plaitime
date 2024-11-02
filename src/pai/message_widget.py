@@ -1,12 +1,14 @@
 from PySide6 import QtWidgets, QtCore
 from mistune import html
+from pai.data_models import Fact
 
 
 class MessageWidget(QtWidgets.QLabel):
     role: str
     content: str
+    facts: list[Fact]
 
-    def __init__(self, role: str, text: str, parent=None):
+    def __init__(self, role: str, text: str, facts: list[Fact], *, parent=None):
         super().__init__(parent)
 
         self.setWordWrap(True)
@@ -35,6 +37,7 @@ class MessageWidget(QtWidgets.QLabel):
 
         self.role = role
         self.set_text(text)  # this sets content
+        self.facts = facts
 
     def set_text(self, text):
         self.content = text
@@ -42,6 +45,9 @@ class MessageWidget(QtWidgets.QLabel):
             self.setText("<em>Thinking...</em>")
         else:
             self.setText(html(text))
+
+    def set_facts(self, facts: list[Fact]):
+        self.facts = facts
 
     def add_text(self, text):
         self.content += text

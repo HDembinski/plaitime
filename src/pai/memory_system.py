@@ -1,39 +1,24 @@
-from typing import List, Optional, Set
-import json
-from dataclasses import dataclass
 from datetime import datetime
-import sqlite3
 import numpy as np
-from pai import CHARACTER_DIRECTORY
+from pai.data_models import Fact
+import ollama
+import logging
 
-
-@dataclass
-class NarrativeFact:
-    content: str
-    fact_type: (
-        str  # 'character_trait', 'relationship', 'event', 'backstory', 'world_building'
-    )
-    characters: Set[str]  # Characters involved in this fact
-    source_message: str
-    timestamp: str
-    embedding: Optional[np.ndarray] = None
+logger = logging.getLogger(__name__)
 
 
 class RoleplayMemory:
-    def __init__(self, uid, llm):
+    def __init__(self, facts, model="llama3.2"):
         """
         Initialize the narrative memory system
-
-        Args:
-            llm: The LLM to use for narrative fact extraction and creating embeddings.
         """
-        self.uid = uid
-        self.llm = llm
-        self.setup_database()
+        self.facts = facts
+        self.model = model
 
         # Prompt template for narrative fact extraction
         self.fact_extraction_prompt = """
-        Analyze the following roleplay message and extract key story information.
+        Analyze the following roleplay excerpt and extract key story information.
+
         Focus on:
         1. Character traits and descriptions
         2. Relationships between characters
@@ -45,20 +30,21 @@ class RoleplayMemory:
         {
             "facts": [
                 {
+                    "kind": "character_trait|relationship|event|backstory|world_building",
                     "content": "extracted fact",
-                    "fact_type": "character_trait|relationship|event|backstory|world_building",
-                    "characters": ["list", "of", "character", "names"]
+                    "characters": {"list", "of", "involved", "characters"}
                 }
             ]
         }
         
-        Message: {message}
-        Current characters in scene: {characters}
+        Roleplay excerpt:
+        {message}
         """
 
         self.character_context_prompt = """
         Given these previous facts about characters and their relationships,
         summarize the most relevant information for the current situation.
+
         Focus on:
         1. Direct relationships between involved characters
         2. Relevant backstory elements
@@ -72,47 +58,22 @@ class RoleplayMemory:
         Current situation: {situation}
         """
 
-    def setup_database(self):
-        """Initialize SQLite database for storing narrative facts"""
-        self.conn = sqlite3.connect(CHARACTER_DIRECTORY / f"{self.uid}.db")
-        self.cursor = self.conn.cursor()
-        self.cursor.execute("""
-        CREATE TABLE IF NOT EXISTS narrative_facts (
-            id INTEGER PRIMARY KEY,
-            content TEXT NOT NULL,
-            fact_type TEXT NOT NULL,
-            characters TEXT NOT NULL,
-            source_message TEXT NOT NULL,
-            timestamp TEXT NOT NULL,
-            embedding BLOB
-        )
-        """)
-
-        self.cursor.execute("""
-        CREATE TABLE IF NOT EXISTS characters (
-            name TEXT PRIMARY KEY,
-            first_appearance TEXT NOT NULL
-        )
-        """)
-        self.conn.commit()
-
-    def extract_narrative_facts(
-        self, message: str, active_characters: List[str]
-    ) -> List[NarrativeFact]:
+    def extract_facts(self, message: str, active_characters: list[str]) -> list[Fact]:
         """
-        Extract narrative facts from a roleplay message
+        Extract facts from a roleplay message
         """
         prompt = self.fact_extraction_prompt.format(
             message=message, characters=", ".join(active_characters)
         )
-        response = self.llm(prompt)
+        response = ollama.generate(model=self.model, prompt=prompt)
+        logger.info("extract_facts", response)
 
         try:
-            extracted = json.loads(response)
+            extracted = Fact.model_validate_json(response)
             facts = []
 
             for fact_data in extracted["facts"]:
-                fact = NarrativeFact(
+                fact = Fact(
                     content=fact_data["content"],
                     fact_type=fact_data["fact_type"],
                     characters=set(fact_data["characters"]),
@@ -128,7 +89,7 @@ class RoleplayMemory:
             print("Error parsing LLM response")
             return []
 
-    def store_fact(self, fact: NarrativeFact):
+    def store_fact(self, fact: Fact):
         """Store a narrative fact in the database"""
         self.cursor.execute(
             """
@@ -158,7 +119,7 @@ class RoleplayMemory:
 
         self.conn.commit()
 
-    def get_character_facts(self, character_name: str) -> List[NarrativeFact]:
+    def get_character_facts(self, character_name: str) -> List[Fact]:
         """Get all facts involving a specific character"""
         self.cursor.execute(
             """
@@ -169,7 +130,7 @@ class RoleplayMemory:
         )
 
         return [
-            NarrativeFact(
+            Fact(
                 content=row[1],
                 fact_type=row[2],
                 characters=set(json.loads(row[3])),
@@ -180,14 +141,14 @@ class RoleplayMemory:
             for row in self.cursor.fetchall()
         ]
 
-    def get_relationship_context(self, char1: str, char2: str) -> List[NarrativeFact]:
+    def get_relationship_context(self, char1: str, char2: str) -> List[Fact]:
         """Get facts about the relationship between two characters"""
         char1_facts = self.get_character_facts(char1)
         return [fact for fact in char1_facts if char2 in fact.characters]
 
     def search_relevant_facts(
         self, situation: str, active_characters: List[str], top_k: int = 5
-    ) -> List[NarrativeFact]:
+    ) -> List[Fact]:
         """
         Search for relevant narrative facts based on the current situation
         and active characters
@@ -229,7 +190,7 @@ class RoleplayMemory:
 
     def process_roleplay_message(
         self, message: str, active_characters: List[str]
-    ) -> List[NarrativeFact]:
+    ) -> List[Fact]:
         """
         Process a new roleplay message - extract and store narrative facts
         """

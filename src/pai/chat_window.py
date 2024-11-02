@@ -9,15 +9,16 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from pai import CHARACTER_DIRECTORY, CONFIG_FILE_NAME, MEMORY_DIRECTORY
 from pai.character_bar import CharacterBar
 from pai.config_dialog import ConfigDialog
-from pai.data_models import Character, Config, Memory, Message
+from pai.data_models import Character, Config, Memory, Message, Fact
 from pai.generator import Generator
 from pai.message_widget import MessageWidget
 from pai.util import estimate_num_tokens
 
 T = TypeVar("T", bound=BaseModel)
 
+logging.basicConfig(level=logging.INFO)
+
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 class InputBox(QtWidgets.QTextEdit):
@@ -38,11 +39,15 @@ class InputBox(QtWidgets.QTextEdit):
 
 
 class ChatWindow(QtWidgets.QMainWindow):
-    character: Character = Character()
-    generator: Generator | None = None
+    character: Character
+    generator: Generator | None
 
     def __init__(self):
         super().__init__()
+        self.character = Character()
+        self.facts = []
+        self.generator = None
+
         self.setWindowTitle("PAI")
         self.setMinimumSize(600, 500)
 
@@ -94,15 +99,18 @@ class ChatWindow(QtWidgets.QMainWindow):
         self.messages_layout.addStretch()
         self.scroll_area.setWidget(self.messages_widget)
 
+        widgets = []
         n = len(conversation)
         for i, message in enumerate(conversation):
             if i < n - 1 or message.role == "assistant":
-                self.add_message(message.role, message.content)
+                w = self.add_message(message.role, message.content)
+                widgets.append(w)
             else:
                 self.input_box.setText(message.content)
 
         num_token = estimate_num_tokens(prompt, conversation)
         self.character_bar.update_num_token(num_token, self.context_size)
+        return widgets
 
     def load_config(self) -> Config:
         return load(CONFIG_FILE_NAME, Config)
@@ -122,24 +130,29 @@ class ChatWindow(QtWidgets.QMainWindow):
         self.character_bar.set_character_manually(names, self.character.name)
         self.context_size = get_context_size(self.character.model)
         memory: Memory = load(MEMORY_DIRECTORY / f"{id}.json", Memory)
-        self.load_messages(self.character.prompt, memory.messages)
+        widgets = self.load_messages(self.character.prompt, memory.messages)
+        attach_facts_to_last_generated_message(widgets, memory.facts)
 
     def save_character(self):
         c = self.character
         logger.info(f"saving character {c.name}")
-        messages = [
-            Message(role=message.role, content=message.content)
-            for message in self.get_message_widgets()
-        ]
-        memory = Memory(messages=messages)
+        widgets = self.get_message_widgets()
+        memory = Memory(
+            messages=[
+                Message(role=message.role, content=message.content)
+                for message in widgets
+            ],
+            facts=get_facts_from_last_generated_message(widgets),
+        )
         save(c, CHARACTER_DIRECTORY / f"{c.name}.json")
         save(memory, MEMORY_DIRECTORY / f"{c.name}.json")
 
     def delete_character(self, name: str):
         logger.info(f"deleting character {name}")
-        character_file = CHARACTER_DIRECTORY / f"{name}.json"
-        conversation_file = MEMORY_DIRECTORY / f"{name}.json"
-        for path in [character_file, conversation_file]:
+        for path in (
+            CHARACTER_DIRECTORY / f"{name}.json",
+            MEMORY_DIRECTORY / f"{name}.json",
+        ):
             if path.exists():
                 path.unlink()
 
@@ -166,7 +179,8 @@ class ChatWindow(QtWidgets.QMainWindow):
                 names = get_character_names()
                 self.character_bar.set_character_manually(names, character.name)
                 self.context_size = get_context_size(self.character.model)
-                self.load_messages(character.prompt, memory.messages)
+                widgets = self.load_messages(character.prompt, memory.messages)
+                attach_facts_to_last_generated_message(widgets, memory.facts)
 
     def new_character(self):
         self.save_character()
@@ -179,8 +193,8 @@ class ChatWindow(QtWidgets.QMainWindow):
         self.save_character()
         self.load_character(name)
 
-    def add_message(self, role, text):
-        message = MessageWidget(role, text)
+    def add_message(self, role, text, facts: list[Fact] = []):
+        message = MessageWidget(role, text, facts)
         self.messages_layout.addWidget(message)
         return message
 
@@ -223,13 +237,14 @@ class ChatWindow(QtWidgets.QMainWindow):
         self.generator = None
 
     def generate_response(self):
-        self.generator = Generator(
-            self.character, self.get_message_widgets(), self.context_size
-        )
+        widgets = self.get_message_widgets()
+        facts = get_facts_from_last_generated_message(widgets)
+        self.generator = Generator(self.character, widgets, facts, self.context_size)
         mw = self.add_message("assistant", "")
-        self.generator.increment.connect(mw.add_text)
+        self.generator.nextChunk.connect(mw.add_text)
         self.generator.error.connect(mw.set_text)
         self.generator.finished.connect(self.generator_finished)
+        self.generator.updatedFacts.connect(mw.set_facts)
         self.generator.start()
 
     def copy_to_clipboard(self):
@@ -270,14 +285,6 @@ def load(filename: Path, cls: T) -> T:
     if filename.exists():
         with open(filename) as f:
             return cls.model_validate_json(f.read())
-    elif cls is Memory and not filename.exists():
-        import json
-
-        filename = CHARACTER_DIRECTORY / (filename.stem + ".json")
-        with open(filename) as f:
-            d = json.load(f)
-        return Memory(messages=[Message(**x) for x in d["conversation"]])
-
     logger.error(f"loading {filename} failed, file does not exist")
     return cls()
 
@@ -287,3 +294,22 @@ def get_character_names():
     for fname in CHARACTER_DIRECTORY.glob("*.json"):
         names.append(fname.stem)
     return names
+
+
+def attach_facts_to_last_generated_message(
+    widgets: list[MessageWidget], facts: list[Fact]
+):
+    if not widgets:
+        return
+    assert widgets[-1].role == "assistant"
+    widgets[-1].facts = facts
+
+
+def get_facts_from_last_generated_message(widgets: list[MessageWidget]) -> list[Fact]:
+    if len(widgets) >= 1:
+        if widgets[-1].role == "assistant":
+            return widgets[-1].facts
+    if len(widgets) >= 2:
+        assert widgets[-2].role == "assistant"
+        return widgets[-2].facts
+    return []
