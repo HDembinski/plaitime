@@ -22,7 +22,7 @@ class ConfigDialog(QtWidgets.QDialog):
         self.model = QtWidgets.QComboBox()
         installed_models = []
         for item in ollama.list()["models"]:
-            installed_models.append(item["name"].split(":")[0])
+            installed_models.append(item["name"])
         installed_models.sort()
         self.model.addItems(installed_models)
         i = self.model.findText(character.model)

@@ -119,17 +119,17 @@ class ChatWindow(QtWidgets.QMainWindow):
         config = Config(current_character=self.character_bar.current_character())
         save(config, CONFIG_FILE_NAME)
 
-    def load_character(self, id: str):
-        if not id:
-            # load first character
-            for fname in sorted(CHARACTER_DIRECTORY.glob("*.json")):
-                id = fname.stem
+    def load_character(self, name: str):
+        if not name:
+            # load any character
+            for fname in CHARACTER_DIRECTORY.glob("*.json"):
+                name = fname.stem
                 break
-        self.character = load(CHARACTER_DIRECTORY / f"{id}.json", Character)
+        self.character = load(CHARACTER_DIRECTORY / f"{name}.json", Character)
         names = get_character_names()
         self.character_bar.set_character_manually(names, self.character.name)
         self.context_size = get_context_size(self.character.model)
-        memory: Memory = load(MEMORY_DIRECTORY / f"{id}.json", Memory)
+        memory: Memory = load(MEMORY_DIRECTORY / f"{name}.json", Memory)
         widgets = self.load_messages(self.character.prompt, memory.messages)
         attach_facts_to_last_generated_message(widgets, memory.facts)
 
@@ -175,6 +175,8 @@ class ChatWindow(QtWidgets.QMainWindow):
                 self.load_character("")
             else:
                 character, memory = r
+                if self.character.name != character.name:
+                    self.delete_character(self.character.name)
                 self.character = character
                 names = get_character_names()
                 self.character_bar.set_character_manually(names, character.name)
@@ -238,6 +240,8 @@ class ChatWindow(QtWidgets.QMainWindow):
 
     def generate_response(self):
         widgets = self.get_message_widgets()
+        for w in widgets:
+            logger.info({"role": w.role, "content": w.content, "facts": w.facts})
         facts = get_facts_from_last_generated_message(widgets)
         self.generator = Generator(self.character, widgets, facts, self.context_size)
         mw = self.add_message("assistant", "")

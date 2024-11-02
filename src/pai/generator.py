@@ -49,10 +49,11 @@ class Generator(QtCore.QThread):
 
         user = conversation_window[-1]
         user_input = user["content"]
-        user["content"] = EXTENDED_PROMPT.format(
-            message=user_input,
-            fact_list="\n".join(f"* {x.content}" for x in self.facts),
-        )
+        if self.facts:
+            user["content"] = EXTENDED_PROMPT.format(
+                message=user_input,
+                fact_list="\n".join(f"* {x.content}" for x in self.facts),
+            )
 
         logger.info(user["content"])
 
@@ -90,8 +91,11 @@ You can run 'ollama run {self.character.model}' in terminal to check."""
     ) -> list[Fact]:
         excerpt = "\n\n".join(m["content"] for m in conversation_window[-10:])
 
-        fact_list = "\n".join(f"* {x.content}" for x in self.facts)
-        prompt = EXTRACTION_PROMPT.format(fact_list=fact_list, excerpt=excerpt)
+        known_facts = ""
+        if self.facts:
+            fact_list = "\n".join(f"* {x.content}" for x in self.facts)
+            known_facts = KNOWN_FACTS_PROMPT.format(fact_list=fact_list)
+        prompt = EXTRACTION_PROMPT.format(known_facts=known_facts, excerpt=excerpt)
         logger.info(prompt)
 
         response = ollama.generate(
@@ -115,36 +119,32 @@ EXTENDED_PROMPT = """
 """
 
 EXTRACTION_PROMPT = """
-Analyze the following roleplay excerpt and extract story facts.
+Analyze the following excerpt and extract facts.
 
 Focus on:
-1. Character traits and descriptions
-2. Relationships between characters
-3. Important events or actions
-4. Character backstory elements
-5. World-building details
+* Character traits and descriptions
+* Relationships between characters
+* Important events or actions
+* Character backstory elements
+* World-building details
 
-Story facts are explicitly established by the excerpt.
+Facts must be explicitly established by the excerpt. Only focus on facts with a long-term relevance to the story.
 
 # Response formatting
 
-Return a list of story facts in Markdown notation and nothing else.
-Use one line per story fact. Example:
-
+Return a list of facts in Markdown notation and nothing else. Use one line per story fact. Example:
 * It is Sunday evening.
 * Alice and Bob had a long discussion about marshmellows.
-* Alice has black hair and wears glasses.
-* Bob's eyes are green.
-
-# Known story facts
-
-Below is a list of known story facts. Update this list with the information you
-extract from the roleplay excerpt. If there is no new information, just
-return this list unchanged.
-
-{fact_list}
-
-# Roleplay excerpt
+{known_facts}
+# Story excerpt
 
 {excerpt}
+"""
+
+KNOWN_FACTS_PROMPT = """
+# Known facts
+
+Here is a list of previously extracted facts. Update this list with new information you extract from the excerpt. Include all items from this list that are not updated in your response.
+
+{fact_list}
 """
