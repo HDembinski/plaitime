@@ -1,6 +1,4 @@
 from pydantic import BaseModel, PositiveFloat
-from typing import Literal
-import numpy as np
 
 
 class Character(BaseModel):
@@ -11,28 +9,19 @@ class Character(BaseModel):
     save_conversation: bool = True
 
 
+class Fact(BaseModel):
+    content: str
+    characters: set[str]  # Characters involved in this fact
+
+
 class Message(BaseModel):
     role: str
     content: str
-
-
-# class Fact(BaseModel):
-#     kind: Literal[
-#         "character_trait", "relationship", "event", "backstory", "world_building"
-#     ]
-#     content: str
-#     characters: set[str]  # Characters involved in this fact
-#     timestamp: str = ""
-#     embedding: np.ndarray | None = None
-
-
-class Fact(BaseModel):
-    content: str
+    facts: list[Fact] = []
 
 
 class Memory(BaseModel):
     messages: list[Message] = []
-    facts: list[Fact] = []
 
 
 class Config(BaseModel):

@@ -4,7 +4,7 @@ from pai import CONTEXT_MARGIN, CHARACTERS_PER_TOKEN
 from pai.data_models import Fact, Character
 from pai.message_widget import MessageWidget
 import logging
-import re
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +17,7 @@ class Generator(QtCore.QThread):
     def __init__(
         self,
         character: Character,
-        messages: list[MessageWidget],
-        facts: list[Fact],
+        widgets: list[MessageWidget],
         context_size: int,
         *,
         memory_model: str = "llama3.2",
@@ -26,43 +25,42 @@ class Generator(QtCore.QThread):
         super().__init__()
         self.memory_model = memory_model
         self.character = character
-        self.messages = messages
-        self.facts = facts
+        self.widgets = widgets
         self.context_size = context_size
         self.interrupt = False
 
     def run(self):
         system_prompt = self.character.prompt or "You are a helpful AI assistant."
-        messages = self.messages
+        widgets = self.widgets
 
         # enable endless chatting by clipping the part of the conversation
         # that the llm can see, but keep the system prompt at all times
         conversation_window = []
         num_token = len(system_prompt) / CHARACTERS_PER_TOKEN
-        i = len(messages) - 1
-        while num_token < self.context_size - CONTEXT_MARGIN and i >= 0:
-            message = messages[i]
-            conversation_window.append(message.dict())
-            i -= 1
-            num_token += len(message.content) / CHARACTERS_PER_TOKEN
+        for w in reversed(widgets):
+            num_token += len(w.content) / CHARACTERS_PER_TOKEN
+            if num_token > self.context_size - CONTEXT_MARGIN:
+                break
+            conversation_window.append({"role": w.role, "content": w.content})
+        conversation_window.append({"role": "system", "content": system_prompt})
         conversation_window.reverse()
 
         user = conversation_window[-1]
         user_input = user["content"]
-        if self.facts:
+
+        facts = widgets[-2].facts if len(widgets) >= 2 else []
+        if facts:
             user["content"] = EXTENDED_PROMPT.format(
                 message=user_input,
                 fact_list="\n".join(f"* {x.content}" for x in self.facts),
             )
-
-        logger.info(user["content"])
+            logger.info(f"user message with added context\n{user['content']}")
 
         new_message = ""
         try:
             for response in ollama.chat(
                 model=self.character.model,
-                messages=[{"role": "system", "content": system_prompt}]
-                + conversation_window,
+                messages=conversation_window,
                 stream=True,
                 options={"temperature": self.character.temperature},
             ):
@@ -77,41 +75,55 @@ Please make sure that the model '{self.character.model}' is available.
 You can run 'ollama run {self.character.model}' in terminal to check."""
             self.error.emit(error_message)
 
-        conversation_window.append({"role": "assistant", "content": new_message})
+        # facts = self.extract_facts(f"{user_input}\n\n{new_message}")
+        self.updatedFacts.emit(facts)
 
-        # restore original user message for fact extraction
-        user["content"] = user_input
+    def extract_facts(self, excerpt: str) -> list[Fact]:
+        prompt = EXTRACTION_PROMPT.format(excerpt)
+        data = generate_list_response(self.memory_model, prompt)
+        facts = self.facts + [
+            Fact(content=x["content"], characters=x.get("characters", [])) for x in data
+        ]
 
-        facts = self.extract_new_facts(conversation_window)
-        if facts:
-            self.updatedFacts.emit(facts)
+        s = "\n".join(f"{i+1}. {x.content}" for (i, x) in enumerate(facts))
+        logger.info(f"Before removal of redundancies:\n{s}")
 
-    def extract_new_facts(
-        self, conversation_window: list[dict[str, str]]
-    ) -> list[Fact]:
-        excerpt = "\n\n".join(m["content"] for m in conversation_window[-10:])
+        enumerated_list = []
+        for i, x in enumerate(facts):
+            enumerated_list.append(f"{i+1}. {x.content}")
+        prompt = DUPLICATION_PROMPT.format("\n".join(enumerated_list))
+        indices = generate_list_response(self.memory_model, prompt, item_type=int)
+        for i in indices:
+            if i >= 1 and i <= len(facts):
+                del facts[i - 1]
 
-        known_facts = ""
-        if self.facts:
-            fact_list = "\n".join(f"* {x.content}" for x in self.facts)
-            known_facts = KNOWN_FACTS_PROMPT.format(fact_list=fact_list)
-        prompt = EXTRACTION_PROMPT.format(known_facts=known_facts, excerpt=excerpt)
-        logger.info(prompt)
+        s = "\n".join(f"{i+1}. {x.content}" for (i, x) in enumerate(facts))
+        logger.info(f"After removal of redundancies:\n{s}")
+        return facts
 
-        response = ollama.generate(
-            model=self.memory_model,
-            prompt=prompt,
+
+def generate_list_response(
+    model: str, prompt: str, item_type: type | None = None
+) -> list:
+    for iter in range(5):
+        response: str = ollama.generate(
+            model=model, prompt=prompt, options={"temperature": 0.1}
         )["response"]
-        logger.info(f"Story facts:\n{response}")
-
-        matches = re.findall(r"^ *\* *(.+)$", response, re.MULTILINE)
-        logger.info("Parsed story facts:\n" + "\n".join(matches))
-
-        return [Fact(content=x) for x in matches]
+        logger.info(f"Raw response (iter={iter}):\n{response}")
+        # clip comments before or after the json
+        try:
+            clipped = response[response.index("[") : response.rindex("]") + 1]
+            list_of_data = json.loads(clipped)
+            if item_type is None:
+                return list_of_data
+            return [item_type(x) for x in list_of_data]
+        except Exception as e:
+            logger.error("JSON parsing failed (iter={iter}):", e)
+    return []
 
 
 EXTENDED_PROMPT = """
-# User message        
+# User message
 {message}
 
 # Context
@@ -119,32 +131,62 @@ EXTENDED_PROMPT = """
 """
 
 EXTRACTION_PROMPT = """
-Analyze the following excerpt and extract facts.
+You are a professional author.
 
-Focus on:
-* Character traits and descriptions
-* Relationships between characters
-* Important events or actions
-* Character backstory elements
-* World-building details
+Analyze the following story excerpt and extract facts from the story.
 
-Facts must be explicitly established by the excerpt. Only focus on facts with a long-term relevance to the story.
-
-# Response formatting
-
-Return a list of facts in Markdown notation and nothing else. Use one line per story fact. Example:
-* It is Sunday evening.
-* Alice and Bob had a long discussion about marshmellows.
-{known_facts}
 # Story excerpt
 
-{excerpt}
+{0}
+
+# Instructions
+
+Think aloud about the excerpt, as you are trying to isolate facts which are established and are of long-term importance to continue the story. Ignore transient or fleeting information.
+
+Focus on:
+* Character descriptions
+  - How old is the character?
+  - How do they look like (any details about face or body)?
+  - How are they dressed?
+  - What is their occupation? Do they mention hobbies?
+  - Do they behave in a typical way?
+  - What did they reveal about their backstory?
+* Relationships between characters
+  - Are the characters friends or enemies, close or distant?
+  - Are they flirting or in love? Is the love one-sided?
+  - Do the characters know each other well or not?
+* World-building details
+  - Where and when does the story happen?
+  - Descriptions of places
+* Central events that will certainly shape the future of the story
+
+When you are done analying, return the facts in JSON format. Example:
+
+[
+    {{
+        "content": "content of the first fact",
+        "characters" : ["list", "of", "involved", "characters"]
+    }},
+    {{
+        "content": "content of the second fact",
+        "characters" : ["another", "list", "of", "involved", "characters"]
+    }}
+]
+
+If the fact is not related to any character specifically, leave the "characters" list empty.
 """
 
-KNOWN_FACTS_PROMPT = """
-# Known facts
+DUPLICATION_PROMPT = """
+You are a professional author.
 
-Here is a list of previously extracted facts. Update this list with new information you extract from the excerpt. Include all items from this list that are not updated in your response.
+Try to find redundant information in the following list of story facts. Think aloud about the list and why certain items seem redundant.
+Redundant items are describing the same thing in different words.
 
-{fact_list}
+Once you are done analyzing, return the indices of the facts that can safely be removed, formatted as a JSON list.
+If you don't find anything that is redundant, return an empty list. If you are not perfectly sure, it is better to NOT remove an item. In other words, only include indices in the list,
+if you are very confident that they are redundant.
+
+# Enumerated list of story facts
+
+{0}
 """

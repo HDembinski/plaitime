@@ -45,7 +45,6 @@ class ChatWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.character = Character()
-        self.facts = []
         self.generator = None
 
         self.setWindowTitle("PAI")
@@ -93,24 +92,23 @@ class ChatWindow(QtWidgets.QMainWindow):
         config = self.load_config()
         self.load_character(config.current_character)
 
-    def load_messages(self, prompt: str, conversation: list[Message]):
+    def load_messages(self, prompt: str, memory: Memory):
         self.messages_widget = QtWidgets.QWidget()
         self.messages_layout = QtWidgets.QVBoxLayout(self.messages_widget)
         self.messages_layout.addStretch()
         self.scroll_area.setWidget(self.messages_widget)
 
         widgets = []
-        n = len(conversation)
-        for i, message in enumerate(conversation):
-            if i < n - 1 or message.role == "assistant":
-                w = self.add_message(message.role, message.content)
+        n = len(memory.messages)
+        for i, m in enumerate(memory.messages):
+            if i < n - 1 or m.role == "assistant":
+                w = self.add_message(m.role, m.content, m.facts)
                 widgets.append(w)
             else:
-                self.input_box.setText(message.content)
+                self.input_box.setText(m.content)
 
-        num_token = estimate_num_tokens(prompt, conversation)
+        num_token = estimate_num_tokens(prompt, widgets)
         self.character_bar.update_num_token(num_token, self.context_size)
-        return widgets
 
     def load_config(self) -> Config:
         return load(CONFIG_FILE_NAME, Config)
@@ -129,21 +127,21 @@ class ChatWindow(QtWidgets.QMainWindow):
         names = get_character_names()
         self.character_bar.set_character_manually(names, self.character.name)
         self.context_size = get_context_size(self.character.model)
-        memory: Memory = load(MEMORY_DIRECTORY / f"{name}.json", Memory)
-        widgets = self.load_messages(self.character.prompt, memory.messages)
-        attach_facts_to_last_generated_message(widgets, memory.facts)
+        memory = load(MEMORY_DIRECTORY / f"{name}.json", Memory)
+        self.load_messages(self.character.prompt, memory)
 
     def save_character(self):
         c = self.character
         logger.info(f"saving character {c.name}")
-        widgets = self.get_message_widgets()
-        memory = Memory(
-            messages=[
-                Message(role=message.role, content=message.content)
-                for message in widgets
-            ],
-            facts=get_facts_from_last_generated_message(widgets),
-        )
+        if c.save_conversation:
+            widgets = self.get_message_widgets()
+            messages = [Message.model_validate(w.dict()) for w in widgets]
+            user_text = self.get_user_text()
+            if user_text:
+                messages.append(Message(role="user", content=user_text))
+        else:
+            messages = []
+        memory = Memory(messages=messages)
         save(c, CHARACTER_DIRECTORY / f"{c.name}.json")
         save(memory, MEMORY_DIRECTORY / f"{c.name}.json")
 
@@ -161,10 +159,11 @@ class ChatWindow(QtWidgets.QMainWindow):
         self.save_character()
 
     def show_config_dialog(self):
-        memory = Memory()
-        for message in self.get_message_widgets():
-            memory.messages.append(Message.model_validate(message.dict()))
-        self.configure_character(self.character, memory)
+        widgets = self.get_message_widgets()
+        messages = []
+        for w in widgets:
+            messages.append(Message.model_validate(w.dict()))
+        self.configure_character(self.character, Memory(messages=messages))
 
     def configure_character(self, character, memory):
         dialog = ConfigDialog(character, memory, parent=self)
@@ -181,8 +180,7 @@ class ChatWindow(QtWidgets.QMainWindow):
                 names = get_character_names()
                 self.character_bar.set_character_manually(names, character.name)
                 self.context_size = get_context_size(self.character.model)
-                widgets = self.load_messages(character.prompt, memory.messages)
-                attach_facts_to_last_generated_message(widgets, memory.facts)
+                self.load_messages(character.prompt, memory)
 
     def new_character(self):
         self.save_character()
@@ -195,7 +193,7 @@ class ChatWindow(QtWidgets.QMainWindow):
         self.save_character()
         self.load_character(name)
 
-    def add_message(self, role, text, facts: list[Fact] = []):
+    def add_message(self, role, text, facts: list[Fact]):
         message = MessageWidget(role, text, facts)
         self.messages_layout.addWidget(message)
         return message
@@ -221,15 +219,18 @@ class ChatWindow(QtWidgets.QMainWindow):
     def scroll_to_bottom(self, _, vmax):
         self.vscrollbar.setValue(vmax)
 
+    def get_user_text(self):
+        return self.input_box.toPlainText().strip()
+
     def send_message_and_generate_response(self):
-        user_text = self.input_box.toPlainText().strip()
+        user_text = self.get_user_text()
         if not user_text:
             return
 
         self.input_box.clear()
         self.send_button.setEnabled(False)
         self.input_box.setEnabled(False)
-        self.add_message("user", user_text)
+        self.add_message("user", user_text, [])
         self.generate_response()
 
     def generator_finished(self):
@@ -240,11 +241,8 @@ class ChatWindow(QtWidgets.QMainWindow):
 
     def generate_response(self):
         widgets = self.get_message_widgets()
-        for w in widgets:
-            logger.info({"role": w.role, "content": w.content, "facts": w.facts})
-        facts = get_facts_from_last_generated_message(widgets)
-        self.generator = Generator(self.character, widgets, facts, self.context_size)
-        mw = self.add_message("assistant", "")
+        self.generator = Generator(self.character, widgets, self.context_size)
+        mw = self.add_message("assistant", "", [])
         self.generator.nextChunk.connect(mw.add_text)
         self.generator.error.connect(mw.set_text)
         self.generator.finished.connect(self.generator_finished)
@@ -287,8 +285,22 @@ def save(obj: BaseModel, filename: Path):
 
 def load(filename: Path, cls: T) -> T:
     if filename.exists():
-        with open(filename) as f:
-            return cls.model_validate_json(f.read())
+        try:
+            with open(filename) as f:
+                return cls.model_validate_json(f.read())
+        except Exception as e:
+            logger.error(e)
+            if cls is Memory:
+                import json
+
+                messages = []
+                with open(filename) as f:
+                    data = json.load(f)
+                for m in data["messages"]:
+                    messages.append(
+                        Message(role=m["role"], content=m["content"], facts=[])
+                    )
+                return Memory(messages=messages)
     logger.error(f"loading {filename} failed, file does not exist")
     return cls()
 
@@ -298,22 +310,3 @@ def get_character_names():
     for fname in CHARACTER_DIRECTORY.glob("*.json"):
         names.append(fname.stem)
     return names
-
-
-def attach_facts_to_last_generated_message(
-    widgets: list[MessageWidget], facts: list[Fact]
-):
-    if not widgets:
-        return
-    assert widgets[-1].role == "assistant"
-    widgets[-1].facts = facts
-
-
-def get_facts_from_last_generated_message(widgets: list[MessageWidget]) -> list[Fact]:
-    if len(widgets) >= 1:
-        if widgets[-1].role == "assistant":
-            return widgets[-1].facts
-    if len(widgets) >= 2:
-        assert widgets[-2].role == "assistant"
-        return widgets[-2].facts
-    return []

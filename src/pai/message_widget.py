@@ -54,4 +54,4 @@ class MessageWidget(QtWidgets.QLabel):
         self.setText(html(self.content))
 
     def dict(self):
-        return {"role": self.role, "content": self.content}
+        return {"role": self.role, "content": self.content, "facts": self.facts}

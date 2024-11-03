@@ -40,7 +40,7 @@ class ConfigDialog(QtWidgets.QDialog):
         self.save_conversation.setChecked(character.save_conversation)
 
         self.clear_conversation = QtWidgets.QCheckBox()
-        self.clear_conversation.setChecked(not character.save_conversation)
+        self.clear_conversation.setChecked(False)
 
         self.delete_character = QtWidgets.QCheckBox()
 
