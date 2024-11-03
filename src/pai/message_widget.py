@@ -42,7 +42,10 @@ class MessageWidget(QtWidgets.QLabel):
     def set_text(self, text):
         self.content = text
         if not text:
-            self.setText("<em>Thinking...</em>")
+            if self.role == "assistant":
+                self.setText("<em>Thinking...</em>")
+            else:
+                self.hide()
         else:
             self.setText(html(text))
 
