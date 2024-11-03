@@ -274,8 +274,7 @@ def get_context_size(model):
     for key in d:
         if "context_length" in key:
             return d[key]
-    logger.warning(f"context length not found {model}")
-    return 4096
+    raise RuntimeError("context_length not found")
 
 
 def save(obj: BaseModel, filename: Path):
