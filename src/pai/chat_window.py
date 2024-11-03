@@ -279,28 +279,33 @@ def get_context_size(model):
 
 
 def save(obj: BaseModel, filename: Path):
-    with open(filename, "w") as f:
-        f.write(obj.model_dump_json())
+    with open(filename, "wb") as f:
+        f.write(obj.model_dump_json(indent=4).encode("utf-8"))
 
 
 def load(filename: Path, cls: T) -> T:
     if filename.exists():
         try:
-            with open(filename) as f:
+            with open(filename, "rb") as f:
                 return cls.model_validate_json(f.read())
         except Exception as e:
             logger.error(e)
-            if cls is Memory:
-                import json
 
-                messages = []
-                with open(filename) as f:
+        if cls is Memory:
+            import json
+
+            messages = []
+            try:
+                with open(filename, "rb") as f:
                     data = json.load(f)
                 for m in data["messages"]:
                     messages.append(
                         Message(role=m["role"], content=m["content"], facts=[])
                     )
                 return Memory(messages=messages)
+            except Exception as e:
+                logger.error(e)
+
     logger.error(f"loading {filename} failed, file does not exist")
     return cls()
 
