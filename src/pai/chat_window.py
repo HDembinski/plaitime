@@ -133,17 +133,21 @@ class ChatWindow(QtWidgets.QMainWindow):
     def save_character(self):
         c = self.character
         logger.info(f"saving character {c.name}")
+        save(c, CHARACTER_DIRECTORY / f"{c.name}.json")
+
         if c.save_conversation:
             widgets = self.get_message_widgets()
             messages = [Message.model_validate(w.dict()) for w in widgets]
             user_text = self.get_user_text()
             if user_text:
                 messages.append(Message(role="user", content=user_text))
-        else:
-            messages = []
-        memory = Memory(messages=messages)
-        save(c, CHARACTER_DIRECTORY / f"{c.name}.json")
-        save(memory, MEMORY_DIRECTORY / f"{c.name}.json")
+            if messages:
+                memory = Memory(messages=messages)
+                save(memory, MEMORY_DIRECTORY / f"{c.name}.json")
+                return
+        # if nothing shall be saved if there is nothing to save, remove the file
+        path = MEMORY_DIRECTORY / f"{c.name}.json"
+        path.unlink(missing_ok=True)
 
     def delete_character(self, name: str):
         logger.info(f"deleting character {name}")
@@ -151,8 +155,7 @@ class ChatWindow(QtWidgets.QMainWindow):
             CHARACTER_DIRECTORY / f"{name}.json",
             MEMORY_DIRECTORY / f"{name}.json",
         ):
-            if path.exists():
-                path.unlink()
+            path.unlink(missing_ok=True)
 
     def save_all(self):
         self.save_config()
@@ -303,7 +306,7 @@ def load(filename: Path, cls: T) -> T:
             except Exception as e:
                 logger.error(e)
 
-    logger.error(f"loading {filename} failed, file does not exist")
+    logger.info(f"{filename} does not exist")
     return cls()
 
 
