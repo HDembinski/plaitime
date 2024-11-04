@@ -2,7 +2,7 @@ import sys
 
 from PySide6 import QtGui, QtWidgets
 
-from pai.chat_window import ChatWindow
+from .chat_window import ChatWindow
 
 
 def main():

@@ -9,15 +9,9 @@ class Character(BaseModel):
     save_conversation: bool = True
 
 
-class Fact(BaseModel):
-    content: str
-    characters: set[str]  # Characters involved in this fact
-
-
 class Message(BaseModel):
     role: str
     content: str
-    facts: list[Fact] = []
 
 
 class Memory(BaseModel):

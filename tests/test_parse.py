@@ -1,4 +1,4 @@
-from pai.parser import parse
+from plaitime.parser import parse
 import pytest
 
 

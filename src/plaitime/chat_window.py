@@ -3,16 +3,21 @@ import logging
 from pathlib import Path
 from typing import TypeVar
 
-import ollama as llm
+import ollama
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from pai import CHARACTER_DIRECTORY, CONFIG_FILE_NAME, MEMORY_DIRECTORY
-from pai.character_bar import CharacterBar
-from pai.config_dialog import ConfigDialog
-from pai.data_models import Character, Config, Memory, Message, Fact
-from pai.generator import Generator
-from pai.message_widget import MessageWidget
-from pai.util import estimate_num_tokens
+from . import (
+    CHARACTER_DIRECTORY,
+    CONFIG_FILE_NAME,
+    MEMORY_DIRECTORY,
+    STORY_EXTRACTION_PROMPT,
+)
+from .character_bar import CharacterBar
+from .config_dialog import ConfigDialog
+from .data_models import Character, Config, Memory, Message
+from .generator import Generator
+from .message_widget import MessageWidget
+from .util import estimate_num_tokens
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -55,6 +60,7 @@ class ChatWindow(QtWidgets.QMainWindow):
         self.setMenuWidget(self.character_bar)
         self.character_bar.config_button.clicked.connect(self.show_config_dialog)
         self.character_bar.new_button.clicked.connect(self.new_character)
+        self.character_bar.summary_button.clicked.connect(self.generate_summary)
         self.character_bar.character_selector.currentTextChanged.connect(
             self.switch_character
         )
@@ -102,7 +108,7 @@ class ChatWindow(QtWidgets.QMainWindow):
         n = len(memory.messages)
         for i, m in enumerate(memory.messages):
             if i < n - 1 or m.role == "assistant":
-                w = self.add_message(m.role, m.content, m.facts)
+                w = self.add_message(m.role, m.content)
                 widgets.append(w)
             else:
                 self.input_box.setText(m.content)
@@ -196,8 +202,8 @@ class ChatWindow(QtWidgets.QMainWindow):
         self.save_character()
         self.load_character(name)
 
-    def add_message(self, role, text, facts: list[Fact]):
-        message = MessageWidget(role, text, facts)
+    def add_message(self, role: str, text: str) -> MessageWidget:
+        message = MessageWidget(role, text)
         self.messages_layout.addWidget(message)
         return message
 
@@ -230,7 +236,7 @@ class ChatWindow(QtWidgets.QMainWindow):
         self.input_box.clear()
         self.send_button.setEnabled(False)
         self.input_box.setEnabled(False)
-        self.add_message("user", user_text, [])
+        self.add_message("user", user_text)
         self.generate_response()
 
     def generator_finished(self):
@@ -241,12 +247,17 @@ class ChatWindow(QtWidgets.QMainWindow):
 
     def generate_response(self):
         widgets = self.get_message_widgets()
-        self.generator = Generator(self.character, widgets, self.context_size)
-        mw = self.add_message("assistant", "", [])
+        self.generator = Generator(
+            self.character.model,
+            self.character.temperature,
+            self.character.prompt,
+            widgets,
+            self.context_size,
+        )
+        mw = self.add_message("assistant", "")
         self.generator.nextChunk.connect(mw.add_text)
         self.generator.error.connect(mw.set_text)
         self.generator.finished.connect(self.generator_finished)
-        self.generator.updatedFacts.connect(mw.set_facts)
         self.generator.start()
 
     def copy_to_clipboard(self):
@@ -261,6 +272,24 @@ class ChatWindow(QtWidgets.QMainWindow):
             if isinstance(child, MessageWidget)
         ]
 
+    def generate_summary(self):
+        messages = self.get_message_widgets()
+        text = self.character.prompt + "\n\n".join(m.content for m in messages)
+
+        self.input_box.setEnabled(False)
+        self.send_button.setEnabled(False)
+        response = ollama.generate(
+            model=self.character.model,
+            prompt=STORY_EXTRACTION_PROMPT.format(text),
+            options={"temperature": 0.1},
+        )["response"]
+
+        text = self.input_box.toPlainText()
+        self.input_box.setPlainText(text + response)
+        self.input_box.setEnabled(True)
+        self.send_button.setEnabled(True)
+        self.input_box.setFocus()
+
     def keyPressEvent(self, event):
         key = event.key()
         if key == QtCore.Qt.Key_Escape:
@@ -270,7 +299,7 @@ class ChatWindow(QtWidgets.QMainWindow):
 
 
 def get_context_size(model):
-    d = llm.show(model)["model_info"]
+    d = ollama.show(model)["model_info"]
     for key in d:
         if "context_length" in key:
             return d[key]
@@ -298,9 +327,7 @@ def load(filename: Path, cls: T) -> T:
                 with open(filename, "rb") as f:
                     data = json.load(f)
                 for m in data["messages"]:
-                    messages.append(
-                        Message(role=m["role"], content=m["content"], facts=[])
-                    )
+                    messages.append(Message(role=m["role"], content=m["content"]))
                 return Memory(messages=messages)
             except Exception as e:
                 logger.error(e)

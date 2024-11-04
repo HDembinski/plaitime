@@ -1,6 +1,6 @@
 from PySide6 import QtWidgets
 import ollama
-from pai.data_models import Character, Memory
+from .data_models import Character, Memory
 
 
 class ConfigDialog(QtWidgets.QDialog):
@@ -17,6 +17,7 @@ class ConfigDialog(QtWidgets.QDialog):
 
         self.prompt = QtWidgets.QTextEdit()
         self.prompt.setPlainText(character.prompt)
+        self.prompt.setAcceptRichText(False)
         self.prompt.setMinimumHeight(200)
 
         self.model = QtWidgets.QComboBox()
@@ -32,8 +33,8 @@ class ConfigDialog(QtWidgets.QDialog):
             self.model.addItem(character.model)
 
         self.temperature = QtWidgets.QDoubleSpinBox()
-        self.temperature.setRange(0.0, 2.0)
-        self.temperature.setSingleStep(0.1)
+        self.temperature.setRange(0, 2.0)
+        self.temperature.setDecimals(1)
         self.temperature.setValue(character.temperature)
 
         self.save_conversation = QtWidgets.QCheckBox()

@@ -14,6 +14,7 @@ class CharacterBar(QtWidgets.QWidget):
         self.character_selector = QtWidgets.QComboBox()
         self.new_button = QtWidgets.QPushButton("New character")
         self.clipboard_button = QtWidgets.QPushButton("Clipboard")
+        self.summary_button = QtWidgets.QPushButton("Summary")
         self.num_token = QtWidgets.QLabel()
 
         layout = QtWidgets.QHBoxLayout()
@@ -21,10 +22,11 @@ class CharacterBar(QtWidgets.QWidget):
         layout.addWidget(self.character_selector)
         layout.addWidget(self.new_button)
         layout.addWidget(self.clipboard_button)
+        layout.addWidget(self.summary_button)
         layout.addWidget(self.num_token)
         self.setLayout(layout)
 
-    def set_character_manually(self, names, new_name):
+    def set_character_manually(self, names: list[str], new_name: str):
         if new_name not in names:
             names.append(new_name)
         names.sort()
