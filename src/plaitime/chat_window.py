@@ -2,6 +2,7 @@ from pydantic import BaseModel
 import logging
 from pathlib import Path
 from typing import TypeVar
+from datetime import datetime
 
 import ollama
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -307,8 +308,19 @@ def get_context_size(model):
 
 
 def save(obj: BaseModel, filename: Path):
+    backup = None
+    if filename.exists() and isinstance(obj, Memory):
+        st = filename.stat()
+        suffix = datetime.fromtimestamp(st.st_mtime).strftime(r"%Y-%m-%d-%H-%M-%S")
+        backup = filename.rename(filename.with_suffix(f".backup-{suffix}"))
     with open(filename, "wb") as f:
-        f.write(obj.model_dump_json(indent=4).encode("utf-8"))
+        c1 = obj.model_dump_json(indent=4).encode("utf-8")
+        f.write(c1)
+    if backup:
+        with open(backup, "rb") as f:
+            c2 = f.read()
+        if c1 == c2:
+            backup.unlink()
 
 
 def load(filename: Path, cls: T) -> T:

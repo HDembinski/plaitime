@@ -1,9 +1,9 @@
 from pathlib import Path
 
-BASE_DIRECTORY = Path.home() / ".pai"
+BASE_DIRECTORY = Path.home() / ".plaitime"
 BASE_DIRECTORY.mkdir(exist_ok=True)
 
-CONFIG_FILE_NAME = BASE_DIRECTORY / "pai.json"
+CONFIG_FILE_NAME = BASE_DIRECTORY / "config.json"
 CHARACTER_DIRECTORY = BASE_DIRECTORY / "characters"
 CHARACTER_DIRECTORY.mkdir(exist_ok=True)
 MEMORY_DIRECTORY = BASE_DIRECTORY / "memories"
