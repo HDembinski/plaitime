@@ -2,7 +2,7 @@ import sys
 
 from PySide6 import QtGui, QtWidgets
 
-from .chat_window import ChatWindow
+from .main_window import MainWindow
 
 
 def main():
@@ -12,7 +12,7 @@ def main():
     font = QtGui.QFont("Arial", 10)
     app.setFont(font)
 
-    window = ChatWindow()
+    window = MainWindow()
     window.show()
     app.lastWindowClosed.connect(window.save_all)
     sys.exit(app.exec())

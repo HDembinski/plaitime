@@ -12,6 +12,8 @@ from . import (
     CONFIG_FILE_NAME,
     MEMORY_DIRECTORY,
     STORY_EXTRACTION_PROMPT,
+    CONTEXT_MARGIN,
+    CHARACTERS_PER_TOKEN,
 )
 from .character_bar import CharacterBar
 from .config_dialog import ConfigDialog
@@ -44,7 +46,7 @@ class InputBox(QtWidgets.QTextEdit):
         super().keyPressEvent(event)
 
 
-class ChatWindow(QtWidgets.QMainWindow):
+class MainWindow(QtWidgets.QMainWindow):
     character: Character
     generator: Generator | None
 
@@ -105,16 +107,14 @@ class ChatWindow(QtWidgets.QMainWindow):
         self.messages_layout.addStretch()
         self.scroll_area.setWidget(self.messages_widget)
 
-        widgets = []
-        n = len(memory.messages)
-        for i, m in enumerate(memory.messages):
-            if i < n - 1 or m.role == "assistant":
-                w = self.add_message(m.role, m.content)
-                widgets.append(w)
-            else:
-                self.input_box.setText(m.content)
+        messages = memory.messages
+        if messages and messages[-1].role == "user":
+            m = messages.pop()
+            self.input_box.setText(m.content)
+        for m in messages:
+            self.add_message(m.role, m.content)
 
-        num_token = estimate_num_tokens(prompt, widgets)
+        num_token = estimate_num_tokens(prompt, messages)
         self.character_bar.update_num_token(num_token, self.context_size)
 
     def load_config(self) -> Config:
@@ -144,7 +144,7 @@ class ChatWindow(QtWidgets.QMainWindow):
 
         if c.save_conversation:
             widgets = self.get_message_widgets()
-            messages = [Message.model_validate(w.dict()) for w in widgets]
+            messages = [Message(role=w.role, content=w.content) for w in widgets]
             user_text = self.get_user_text()
             if user_text:
                 messages.append(Message(role="user", content=user_text))
@@ -172,11 +172,11 @@ class ChatWindow(QtWidgets.QMainWindow):
         widgets = self.get_message_widgets()
         messages = []
         for w in widgets:
-            messages.append(Message.model_validate(w.dict()))
+            messages.append(Message(role=w.role, content=w.content))
         self.configure_character(self.character, Memory(messages=messages))
 
-    def configure_character(self, character, memory):
-        dialog = ConfigDialog(character, memory, parent=self)
+    def configure_character(self, character: Character, memory: Memory):
+        dialog = ConfigDialog(character.model_copy(), memory.model_copy(), parent=self)
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             r: str | tuple[Character, Memory] = dialog.result()
             if isinstance(r, str):
@@ -194,7 +194,10 @@ class ChatWindow(QtWidgets.QMainWindow):
 
     def new_character(self):
         self.save_character()
-        self.configure_character(Character(), Memory())
+        # this is important, otherwise the old character is deleted in configure_character
+        self.character = Character()
+        self.memory = Memory()
+        self.configure_character(self.character, self.memory)
         names = get_character_names()
         self.character_bar.set_character_manually(names, self.character.name)
 
@@ -247,13 +250,22 @@ class ChatWindow(QtWidgets.QMainWindow):
         self.generator = None
 
     def generate_response(self):
-        widgets = self.get_message_widgets()
+        prompt = self.character.prompt
+
+        # enable endless chatting by clipping the part of the conversation
+        # that the llm can see, but keep the system prompt at all times
+        window = []
+        num_token = len(prompt) / CHARACTERS_PER_TOKEN
+        for w in reversed(self.get_message_widgets()):
+            num_token += len(w.content) / CHARACTERS_PER_TOKEN
+            if num_token > self.context_size - CONTEXT_MARGIN:
+                break
+            window.append({"role": w.role, "content": w.content})
+        window.append({"role": "system", "content": prompt})
+        window.reverse()
+
         self.generator = Generator(
-            self.character.model,
-            self.character.temperature,
-            self.character.prompt,
-            widgets,
-            self.context_size,
+            self.character.model, self.character.temperature, window
         )
         mw = self.add_message("assistant", "")
         self.generator.nextChunk.connect(mw.add_text)
