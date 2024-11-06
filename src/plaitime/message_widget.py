@@ -20,7 +20,8 @@ class MessageWidget(QtWidgets.QLabel):
                 QFrame {
                     background-color: #F5F5F5;
                     border-radius: 10px;
-                    margin: 5px 5px 5px 50px;
+                    margin: 0px 0px 0px 50px;
+                    padding: 5px;
                     text-align: right;
                 }
             """)
@@ -29,7 +30,8 @@ class MessageWidget(QtWidgets.QLabel):
                 QFrame {
                     background-color: #E3F2FD;
                     border-radius: 10px;
-                    margin: 5px 50px 5px 5px;
+                    margin: 0px 50px 0px 0px;
+                    padding: 5px;
                 }
             """)
 
