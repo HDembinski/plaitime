@@ -55,7 +55,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.character = Character()
         self.generator = None
 
-        self.setWindowTitle("PAI")
+        self.setWindowTitle("Plaitime")
         self.setMinimumSize(600, 500)
 
         # Create top bar
@@ -87,7 +87,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Create input area
         self.input_box = InputBox()
         self.input_box.setMaximumHeight(100)
-        self.input_box.setPlaceholderText("Type your message here...")
+        self.input_box.setPlaceholderText("Type here...")
         self.input_box.sendMessage.connect(self.send_message_and_generate_response)
 
         layout.addWidget(self.input_box)
@@ -131,6 +131,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 name = fname.stem
                 break
         self.character = load(CHARACTER_DIRECTORY / f"{name}.json", Character)
+        warmup_model(self.character.model, self)
         names = get_character_names()
         self.character_bar.set_character_manually(names, self.character.name)
         self.context_size = get_context_size(self.character.model)
@@ -365,3 +366,10 @@ def get_character_names():
     for fname in CHARACTER_DIRECTORY.glob("*.json"):
         names.append(fname.stem)
     return names
+
+
+def warmup_model(model, parent):
+    thread = QtCore.QThread(parent)
+    thread.run = lambda: ollama.generate(model=model, prompt="", keep_alive="1h")
+    thread.finished.connect(thread.deleteLater)
+    thread.start()
