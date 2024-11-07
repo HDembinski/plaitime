@@ -5,6 +5,7 @@ from typing import TypeVar
 from datetime import datetime
 
 import ollama
+from ollama import ResponseError
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from . import (
@@ -313,11 +314,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
 def get_context_size(model):
-    d = ollama.show(model)["model_info"]
-    for key in d:
-        if "context_length" in key:
-            return d[key]
-    raise RuntimeError("context_length not found")
+    try:
+        d = ollama.show(model)["model_info"]
+        for key in d:
+            if "context_length" in key:
+                return d[key]
+        raise RuntimeError("context_length not found")
+        # model was removed
+    except ResponseError:
+        return 0
 
 
 def save(obj: BaseModel, filename: Path):
