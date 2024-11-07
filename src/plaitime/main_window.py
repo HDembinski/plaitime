@@ -13,7 +13,7 @@ from . import (
     CONFIG_FILE_NAME,
     MEMORY_DIRECTORY,
     STORY_EXTRACTION_PROMPT,
-    CONTEXT_MARGIN,
+    CONTEXT_MARGIN_FRACTION,
     CHARACTERS_PER_TOKEN,
 )
 from .character_bar import CharacterBar
@@ -260,7 +260,7 @@ class MainWindow(QtWidgets.QMainWindow):
         num_token = len(prompt) / CHARACTERS_PER_TOKEN
         for w in reversed(self.get_message_widgets()):
             num_token += len(w.content) / CHARACTERS_PER_TOKEN
-            if num_token > self.context_size - CONTEXT_MARGIN:
+            if num_token > self.context_size * (1 - CONTEXT_MARGIN_FRACTION):
                 break
             window.append({"role": w.role, "content": w.content})
         window.append({"role": "system", "content": prompt})
