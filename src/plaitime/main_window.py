@@ -250,6 +250,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.input_box.setEnabled(True)
         self.input_box.setFocus()
         self.generator = None
+        estimate_num_tokens(self.character.prompt, self.get_message_widgets())
 
     def generate_response(self):
         prompt = self.character.prompt
@@ -259,10 +260,13 @@ class MainWindow(QtWidgets.QMainWindow):
         window = []
         num_token = len(prompt) / CHARACTERS_PER_TOKEN
         for w in reversed(self.get_message_widgets()):
+            w.unmark()
+            window.append({"role": w.role, "content": w.content})
             num_token += len(w.content) / CHARACTERS_PER_TOKEN
             if num_token > self.context_size * (1 - CONTEXT_MARGIN_FRACTION):
                 break
-            window.append({"role": w.role, "content": w.content})
+        assert w.content == window[-1]["content"]
+        w.mark()
         window.append({"role": "system", "content": prompt})
         window.reverse()
 
