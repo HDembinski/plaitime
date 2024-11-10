@@ -4,6 +4,7 @@ import ollama
 from pydantic import BaseModel
 import logging
 from typing import TypeVar
+import re
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -33,3 +34,15 @@ def generate_json_response(
         except Exception as e:
             logger.error("JSON parsing failed (trial={trial}):", e)
     return None
+
+
+def remove_last_sentence(s: str) -> str:
+    index = len(s)
+    if index > 0:
+        for _ in range(10):
+            index = s.rfind(".", 0, index - 1) + 1
+            if not re.match(r"^[\s\.]+$", s[index:]):
+                break
+            if index == 0:
+                break
+    return s[:index].rstrip()

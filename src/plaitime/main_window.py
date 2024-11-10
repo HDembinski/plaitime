@@ -243,12 +243,19 @@ class MainWindow(QtWidgets.QMainWindow):
             self.generator = None
         self.cancel_action = self.undo_last_response
 
+    def remove_last_sentence(self):
+        self.cancel_generator()
+        self.chat_widget.remove_last_sentence()
+
     def keyPressEvent(self, event):
-        key = event.key()
-        if key == QtCore.Qt.Key_Escape:
-            self.cancel_action()
-        else:
-            super().keyPressEvent(event)
+        mod = event.modifiers()
+        if event.key() == QtCore.Qt.Key_Escape:
+            if mod & QtCore.Qt.KeyboardModifier.ShiftModifier:
+                self.remove_last_sentence()
+            else:
+                self.cancel_action()
+            return
+        super().keyPressEvent(event)
 
 
 def get_context_size(model):

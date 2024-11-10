@@ -114,6 +114,15 @@ class ChatWidget(QtWidgets.QSplitter):
                 m.setParent(None)
                 m.deleteLater()
 
+    def remove_last_sentence(self):
+        messages = self.get_messages()
+        if len(messages) >= 2:
+            m = messages.pop()
+            assert m.role == "assistant"
+            m.remove_last_sentence()
+            if not m.content:
+                self.rewind()
+
     def append_user_text(self, chunk):
         self._input_area.append_user_text(chunk)
 

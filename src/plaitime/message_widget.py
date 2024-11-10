@@ -1,5 +1,6 @@
 from PySide6 import QtWidgets, QtCore
 from mistune import html
+from .util import remove_last_sentence
 
 
 class MessageWidget(QtWidgets.QLabel):
@@ -83,3 +84,6 @@ class MessageWidget(QtWidgets.QLabel):
         }
         """
         )
+
+    def remove_last_sentence(self):
+        self.set_content(remove_last_sentence(self.content))
