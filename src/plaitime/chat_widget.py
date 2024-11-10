@@ -1,20 +1,18 @@
-from PySide6 import QtWidgets, QtCore
+from PySide6 import QtWidgets, QtCore, QtGui
 from .message_widget import MessageWidget
 
 
-class InputArea(QtWidgets.QTextEdit):
+class TextEdit(QtWidgets.QTextEdit):
     sendMessage = QtCore.Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-
-        self.setMinimumSize(0, 100)
         self.setAcceptRichText(False)
         self.setPlaceholderText(
             "Type here and press Enter to send message. Use Shift+Enter to make a newline."
         )
 
-    def keyPressEvent(self, event):
+    def keyPressEvent(self, event: QtGui.QKeyEvent):
         mod = event.modifiers()
         if event.key() == QtCore.Qt.Key_Return:
             if not (mod & QtCore.Qt.KeyboardModifier.ShiftModifier):
@@ -29,15 +27,40 @@ class InputArea(QtWidgets.QTextEdit):
     def set_text(self, text: str):
         self.setPlainText(text)
 
+
+class InputArea(QtWidgets.QWidget):
+    sendMessage = QtCore.Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.edit = TextEdit()
+        self.edit.sendMessage.connect(self.sendMessage)
+
+        layout = QtWidgets.QVBoxLayout()
+        layout.addWidget(self.edit)
+        self.setLayout(layout)
+
+        self.setMinimumSize(0, 100)
+
     def setEnabled(self, yes):
         super().setEnabled(yes)
         if yes:
-            self.setFocus()
+            self.edit.setFocus()
+
+    def clear(self):
+        self.edit.clear()
+
+    def text(self):
+        return self.edit.text()
+
+    def set_text(self, text: str):
+        return self.edit.set_text(text)
 
     def append_user_text(self, chunk: str):
-        cursor = self.textCursor()
+        cursor = self.edit.textCursor()
         cursor.insertText(chunk)
-        self.setTextCursor(cursor)
+        self.edit.setTextCursor(cursor)
 
 
 class ChatWidget(QtWidgets.QSplitter):
