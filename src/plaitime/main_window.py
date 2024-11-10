@@ -16,9 +16,10 @@ from .character_bar import CharacterBar
 from .config_dialog import ConfigDialog
 from .data_models import Character, Config, Memory, Message
 from .generator import Generator
-from .message_widget import MessageWidget
+from .chat_widget import ChatWidget
 from .util import estimate_num_tokens
 from .io import load, save
+from typing import Callable
 
 logging.basicConfig(level=logging.INFO)
 
@@ -45,12 +46,13 @@ class InputBox(QtWidgets.QTextEdit):
 class MainWindow(QtWidgets.QMainWindow):
     character: Character
     generator: Generator | None
-    cancel_action: None
+    cancel_action: Callable
 
     def __init__(self):
         super().__init__()
         self.character = Character()
         self.generator = None
+        self.cancel_action = self.undo_last_response
 
         self.setWindowTitle("Plaitime")
         self.setMinimumSize(600, 500)
@@ -72,14 +74,8 @@ class MainWindow(QtWidgets.QMainWindow):
         layout = QtWidgets.QVBoxLayout(central_widget)
 
         # Create scroll area for messages
-        self.scroll_area = QtWidgets.QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setHorizontalScrollBarPolicy(
-            QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
-        self.vscrollbar = self.scroll_area.verticalScrollBar()
-        self.vscrollbar.rangeChanged.connect(self.scroll_to_bottom)
-        layout.addWidget(self.scroll_area)
+        self.chat_widget = ChatWidget(self)
+        layout.addWidget(self.chat_widget)
 
         # Create input area
         self.input_box = InputBox()
@@ -99,17 +95,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.load_character(config.current_character)
 
     def load_messages(self, prompt: str, memory: Memory):
-        self.messages_widget = QtWidgets.QWidget()
-        self.messages_layout = QtWidgets.QVBoxLayout(self.messages_widget)
-        self.messages_layout.addStretch()
-        self.scroll_area.setWidget(self.messages_widget)
+        self.chat_widget.clear()
 
         messages = memory.messages
         if messages and messages[-1].role == "user":
             m = messages.pop()
             self.input_box.setText(m.content)
         for m in messages:
-            self.add_message(m.role, m.content)
+            self.chat_widget.add(m.role, m.content)
 
         num_token = estimate_num_tokens(prompt, messages)
         self.character_bar.update_num_token(num_token, self.context_size)
@@ -142,7 +135,7 @@ class MainWindow(QtWidgets.QMainWindow):
         save(c, CHARACTER_DIRECTORY / f"{c.name}.json")
 
         if c.save_conversation:
-            widgets = self.get_message_widgets()
+            widgets = self.chat_widget.get_messages()
             messages = [Message(role=w.role, content=w.content) for w in widgets]
             user_text = self.get_user_text()
             if user_text:
@@ -168,7 +161,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.save_character()
 
     def show_config_dialog(self):
-        widgets = self.get_message_widgets()
+        widgets = self.chat_widget.get_messages()
         messages = []
         for w in widgets:
             messages.append(Message(role=w.role, content=w.content))
@@ -205,15 +198,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.save_character()
         self.load_character(name)
 
-    def add_message(self, role: str, text: str) -> MessageWidget:
-        message = MessageWidget(role, text)
-        self.messages_layout.addWidget(message)
-        return message
-
     def undo_last_response(self):
         self.cancel_generator()
 
-        messages = self.get_message_widgets()
+        messages = self.chat_widget.get_messages()
         if len(messages) >= 2:
             assistant_message = messages.pop()
             assert assistant_message.role == "assistant"
@@ -224,9 +212,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 m.setParent(None)
                 m.deleteLater()
 
-    def scroll_to_bottom(self, _, vmax):
-        self.vscrollbar.setValue(vmax)
-
     def get_user_text(self):
         return self.input_box.toPlainText().strip()
 
@@ -235,7 +220,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.input_box.clear()
         self.send_button.setEnabled(False)
         self.input_box.setEnabled(False)
-        self.add_message("user", user_text)
+        self.chat_widget.add("user", user_text)
         self.generate_response()
 
     def generator_finished(self):
@@ -243,7 +228,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.input_box.setEnabled(True)
         self.input_box.setFocus()
         self.generator = None
-        estimate_num_tokens(self.character.prompt, self.get_message_widgets())
+        estimate_num_tokens(self.character.prompt, self.chat_widget.get_messages())
 
     def generate_response(self):
         prompt = self.character.prompt
@@ -252,12 +237,13 @@ class MainWindow(QtWidgets.QMainWindow):
         # that the llm can see, but keep the system prompt at all times
         window = []
         num_token = len(prompt) / CHARACTERS_PER_TOKEN
-        for w in reversed(self.get_message_widgets()):
+        for w in reversed(self.chat_widget.get_messages()):
             w.unmark()
             window.append({"role": w.role, "content": w.content})
             num_token += len(w.content) / CHARACTERS_PER_TOKEN
             if num_token > self.context_size * (1 - CONTEXT_MARGIN_FRACTION):
                 break
+        assert len(window) > 0
         assert w.content == window[-1]["content"]
         w.mark()
         window.append({"role": "system", "content": prompt})
@@ -266,15 +252,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.generator = Generator(
             self.character.model, window, temperature=self.character.temperature
         )
-        mw = self.add_message("assistant", "")
-        self.generator.nextChunk.connect(mw.add_text)
-        self.generator.error.connect(mw.set_text)
+        mw = self.chat_widget.add("assistant", "")
+        self.generator.nextChunk.connect(mw.add_chunk)
+        self.generator.error.connect(mw.set_content)
         self.generator.finished.connect(self.generator_finished)
         self.cancel_action = self.undo_last_response
         self.generator.start()
 
     def get_dialog_as_text(self):
-        messages = self.get_message_widgets()
+        messages = self.chat_widget.get_messages()
         text = self.character.prompt + "\n\n".join(
             f"{m.role.capitalize()}:\n{m.content}" for m in messages
         )
@@ -283,13 +269,6 @@ class MainWindow(QtWidgets.QMainWindow):
     def copy_to_clipboard(self):
         clipboard = QtGui.QGuiApplication.clipboard()
         clipboard.setText(self.get_dialog_as_text())
-
-    def get_message_widgets(self) -> list[MessageWidget]:
-        return [
-            child
-            for child in self.messages_widget.children()
-            if isinstance(child, MessageWidget)
-        ]
 
     def generate_summary(self):
         self.send_button.setEnabled(False)
@@ -307,11 +286,12 @@ class MainWindow(QtWidgets.QMainWindow):
             temperature=0.1,
         )
 
-        def add_text(chunk):
-            text = self.input_box.toPlainText()
-            self.input_box.setPlainText(text + chunk)
+        def append_text(chunk):
+            cursor = self.input_box.textCursor()
+            cursor.insertText(chunk)
+            self.input_box.setTextCursor(cursor)
 
-        self.generator.nextChunk.connect(add_text)
+        self.generator.nextChunk.connect(append_text)
         self.generator.finished.connect(self.generate_summary_finished)
         self.cancel_action = self.cancel_generator
         self.generator.start()
@@ -325,12 +305,12 @@ class MainWindow(QtWidgets.QMainWindow):
             self.generator.interrupt = True
             self.generator.wait()
             self.generator = None
+        self.cancel_action = self.undo_last_response
 
     def keyPressEvent(self, event):
         key = event.key()
         if key == QtCore.Qt.Key_Escape:
-            if self.cancel_action:
-                self.cancel_action()
+            self.cancel_action()
         else:
             super().keyPressEvent(event)
 

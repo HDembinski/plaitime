@@ -6,7 +6,7 @@ class MessageWidget(QtWidgets.QLabel):
     role: str
     content: str
 
-    def __init__(self, role: str, text: str, *, parent=None):
+    def __init__(self, role: str, content: str, *, parent=None):
         super().__init__(parent)
 
         self.setWordWrap(True)
@@ -16,21 +16,21 @@ class MessageWidget(QtWidgets.QLabel):
         )
 
         self.role = role
-        self.set_text(text)  # this sets content
+        self.set_content(content)  # this sets content
         self.unmark()
 
-    def set_text(self, text):
-        self.content = text
-        if not text:
+    def set_content(self, content):
+        self.content = content
+        if not content:
             if self.role == "assistant":
                 self.setText("<em>Thinking...</em>")
             else:
                 self.hide()
         else:
-            self.setText(html(text))
+            self.setText(html(content))
 
-    def add_text(self, text):
-        self.content += text
+    def add_chunk(self, chunk):
+        self.content += chunk
         self.setText(html(self.content))
 
     def mark(self):
