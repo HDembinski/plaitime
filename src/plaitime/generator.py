@@ -10,11 +10,16 @@ class Generator(QtCore.QThread):
     nextChunk = QtCore.Signal(str)
     error = QtCore.Signal(str)
 
-    def __init__(self, model: str, temperature: float, messages: list[dict[str, str]]):
+    def __init__(
+        self,
+        model: str,
+        messages: list[dict[str, str]],
+        **options: dict[str, str | int | float],
+    ):
         super().__init__()
         self.model = model
-        self.temperature = temperature
         self.messages = messages
+        self.options = options
 
     def run(self):
         try:
@@ -22,7 +27,7 @@ class Generator(QtCore.QThread):
                 model=self.model,
                 messages=self.messages,
                 stream=True,
-                options={"temperature": self.temperature},
+                options=self.options,
             ):
                 if self.interrupt:
                     return

@@ -1,8 +1,4 @@
-from pydantic import BaseModel
 import logging
-from pathlib import Path
-from typing import TypeVar
-from datetime import datetime
 
 import ollama
 from ollama import ResponseError
@@ -22,8 +18,7 @@ from .data_models import Character, Config, Memory, Message
 from .generator import Generator
 from .message_widget import MessageWidget
 from .util import estimate_num_tokens
-
-T = TypeVar("T", bound=BaseModel)
+from .io import load, save
 
 logging.basicConfig(level=logging.INFO)
 
@@ -50,6 +45,7 @@ class InputBox(QtWidgets.QTextEdit):
 class MainWindow(QtWidgets.QMainWindow):
     character: Character
     generator: Generator | None
+    cancel_action: None
 
     def __init__(self):
         super().__init__()
@@ -137,6 +133,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.character_bar.set_character_manually(names, self.character.name)
         self.context_size = get_context_size(self.character.model)
         memory = load(MEMORY_DIRECTORY / f"{name}.json", Memory)
+        self.input_box.clear()
         self.load_messages(self.character.prompt, memory)
 
     def save_character(self):
@@ -214,22 +211,18 @@ class MainWindow(QtWidgets.QMainWindow):
         return message
 
     def undo_last_response(self):
+        self.cancel_generator()
+
         messages = self.get_message_widgets()
-        if self.generator and self.generator.isRunning():
-            assert len(messages) >= 2
-            self.generator.interrupt = True
-            self.generator.wait()
-        else:
-            if not messages:
-                return
-        assistant_message = messages.pop()
-        assert assistant_message.role == "assistant"
-        user_message = messages.pop()
-        assert user_message.role == "user"
-        self.input_box.setText(user_message.content)
-        for m in (assistant_message, user_message):
-            m.setParent(None)
-            m.deleteLater()
+        if len(messages) >= 2:
+            assistant_message = messages.pop()
+            assert assistant_message.role == "assistant"
+            user_message = messages.pop()
+            assert user_message.role == "user"
+            self.input_box.setText(user_message.content)
+            for m in (assistant_message, user_message):
+                m.setParent(None)
+                m.deleteLater()
 
     def scroll_to_bottom(self, _, vmax):
         self.vscrollbar.setValue(vmax)
@@ -271,18 +264,25 @@ class MainWindow(QtWidgets.QMainWindow):
         window.reverse()
 
         self.generator = Generator(
-            self.character.model, self.character.temperature, window
+            self.character.model, window, temperature=self.character.temperature
         )
         mw = self.add_message("assistant", "")
         self.generator.nextChunk.connect(mw.add_text)
         self.generator.error.connect(mw.set_text)
         self.generator.finished.connect(self.generator_finished)
+        self.cancel_action = self.undo_last_response
         self.generator.start()
 
-    def copy_to_clipboard(self):
+    def get_dialog_as_text(self):
         messages = self.get_message_widgets()
+        text = self.character.prompt + "\n\n".join(
+            f"{m.role.capitalize()}:\n{m.content}" for m in messages
+        )
+        return text
+
+    def copy_to_clipboard(self):
         clipboard = QtGui.QGuiApplication.clipboard()
-        clipboard.setText("\n\n".join(m.content for m in messages))
+        clipboard.setText(self.get_dialog_as_text())
 
     def get_message_widgets(self) -> list[MessageWidget]:
         return [
@@ -292,27 +292,45 @@ class MainWindow(QtWidgets.QMainWindow):
         ]
 
     def generate_summary(self):
-        messages = self.get_message_widgets()
-        text = self.character.prompt + "\n\n".join(m.content for m in messages)
-
-        self.input_box.setEnabled(False)
         self.send_button.setEnabled(False)
-        response = ollama.generate(
-            model=self.character.model,
-            prompt=STORY_EXTRACTION_PROMPT.format(text),
-            options={"temperature": 0.1},
-        )["response"]
 
-        text = self.input_box.toPlainText()
-        self.input_box.setPlainText(text + response)
-        self.input_box.setEnabled(True)
+        prompt = STORY_EXTRACTION_PROMPT.format(self.get_dialog_as_text())
+
+        logger.info(prompt)
+
+        self.generator = Generator(
+            self.character.model,
+            messages=(
+                # {"role": "system", "content": ""},
+                {"role": "user", "content": prompt},
+            ),
+            temperature=0.1,
+        )
+
+        def add_text(chunk):
+            text = self.input_box.toPlainText()
+            self.input_box.setPlainText(text + chunk)
+
+        self.generator.nextChunk.connect(add_text)
+        self.generator.finished.connect(self.generate_summary_finished)
+        self.cancel_action = self.cancel_generator
+        self.generator.start()
+
+    def generate_summary_finished(self):
+        self.generator = None
         self.send_button.setEnabled(True)
-        self.input_box.setFocus()
+
+    def cancel_generator(self):
+        if self.generator and self.generator.isRunning():
+            self.generator.interrupt = True
+            self.generator.wait()
+            self.generator = None
 
     def keyPressEvent(self, event):
         key = event.key()
         if key == QtCore.Qt.Key_Escape:
-            self.undo_last_response()
+            if self.cancel_action:
+                self.cancel_action()
         else:
             super().keyPressEvent(event)
 
@@ -327,47 +345,6 @@ def get_context_size(model):
         # model was removed
     except ResponseError:
         return 0
-
-
-def save(obj: BaseModel, filename: Path):
-    backup = None
-    if filename.exists() and isinstance(obj, Memory):
-        st = filename.stat()
-        suffix = datetime.fromtimestamp(st.st_mtime).strftime(r"%Y-%m-%d-%H-%M-%S")
-        backup = filename.rename(filename.with_suffix(f".backup-{suffix}"))
-    with open(filename, "wb") as f:
-        c1 = obj.model_dump_json(indent=4).encode("utf-8")
-        f.write(c1)
-    if backup:
-        with open(backup, "rb") as f:
-            c2 = f.read()
-        if c1 == c2:
-            backup.unlink()
-
-
-def load(filename: Path, cls: T) -> T:
-    if filename.exists():
-        try:
-            with open(filename, "rb") as f:
-                return cls.model_validate_json(f.read())
-        except Exception as e:
-            logger.error(e)
-
-        if cls is Memory:
-            import json
-
-            messages = []
-            try:
-                with open(filename, "rb") as f:
-                    data = json.load(f)
-                for m in data["messages"]:
-                    messages.append(Message(role=m["role"], content=m["content"]))
-                return Memory(messages=messages)
-            except Exception as e:
-                logger.error(e)
-
-    logger.info(f"{filename} does not exist")
-    return cls()
 
 
 def get_character_names():

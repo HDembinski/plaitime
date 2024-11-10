@@ -16,6 +16,7 @@ class Message(BaseModel):
 
 class Memory(BaseModel):
     messages: list[Message] = []
+    memories: list[str] = []
 
 
 class Config(BaseModel):

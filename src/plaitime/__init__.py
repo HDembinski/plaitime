@@ -13,81 +13,65 @@ CHARACTERS_PER_TOKEN = 4  # on average
 CONTEXT_MARGIN_FRACTION = 1 / 8
 
 STORY_EXTRACTION_PROMPT = """
-You are a professional author.
+**Story Summary Expert**
 
-Analyze the story excerpt and extract facts from the story, so that another author can continue the story faithfully.
-Try to isolate facts which are established and are of long-term importance to continue the story. Ignore transient or fleeting information.
+Analyze the text within `<text>` tags and extract key information from the story.
 
-As you are reading the story excerpt, focus on these questions:
-
-* Character descriptions
-  - Start by listing all the characters of the story.
-  - How old is the character?
-  - Physical appearance? (any details about face or body?)
-  - How are they dressed?
-  - What is their occupation?
-  - Unusual mannerisms?
-  - What is revealed about their backstory?
-
-* Relationships between characters
-  - Are the characters friends or enemies, close or distant?
-  - Are they flirting or in love? Is the love one-sided?
-  - Do the characters know each other well or not?
-
-* World-building details
-  - When does the story happen?
-  - Atmosphere & genre?
-  - List all places that are visited in the story and give a short description
-
-# Story excerpt
-
+<text>
 {0}
+</text>
 
-# Response instructions
+**Task Requirements**
 
-Remember: Try to isolate facts which are established and are of long-term importance to continue the story. Ignore transient or fleeting information.
+Extract essential details from the provided narrative, focusing on long-term significance rather than transient information.
+Address the entire text, not just the latest events.
 
-Remember: Your task was to focus on these questions:
+**Questions to Answer**
 
-* Character descriptions
-  - Start by listing all the characters of the story.
-  - How old is the character?
-  - Physical appearance? (any details about face or body?)
-  - How are they dressed?
-  - What is their occupation?
-  - Unusual mannerisms?
-  - What is revealed about their backstory?
+1. **Characters** List all characters mentioned in the story, either directly or indirectly.
 
-* Relationships between characters
-  - Are the characters friends or enemies, close or distant?
-  - Are they flirting or in love? Is the love one-sided?
-  - Do the characters know each other well or not?
+2. **Character Descriptions**
+	* Age of the character
+	* Physical appearance (face, body, visual details)
+	* Attire and dress code
+	* Occupation or role
+	* Distinct traits setting them apart
+	* Relevant backstory information
 
-* World-building details
-  - When does the story happen?
-  - Atmosphere & genre?
-  - List all places that are visited in the story and give a short description
+3. **Character Relationships**
+	* Nature of their connection (friends, enemies, romantic, etc.)
+	* One-sided relationships, if applicable
+	* Familiarity and duration of their acquaintance
+	* Shared history or significant events they've experienced together
 
-Return the information concisely in Markdown format:
+4. **World-Building**
+	* Timeframe (era, period, specific date)
+	* Genre and tone (adventure, horror, mystery, fantasy, etc.)
+	* Locations visited in the story with brief descriptions
 
-**Character descriptions**
+**Response Format**
 
+Return extracted facts in Markdown format:
+
+**Summary of the Story**
+A concise summary of the narrative appears here.
+
+**Character Descriptions**
 - Character 1
-  - Info about character 1
+  - [Description information]
 - Character 2
-  - Info about character 2
+  - [Description information]
 - ...
 
-**Character relationships**
-
-- Character 1 and 2: their relationship
+**Character Relationships**
+- Character 1 and 2: [Relationship description]
 - ...
 
-**World-building details**
-
-- Timeframe
-- Genre & atmosphere
-- Important places
-
-**Summary of the story**
+**World-Building**
+- Genre & Tone: ...
+- Realm and Timeframe: ... 
+- **Important locations**
+  - Place 1: ...
+  - Place 2: ...
+  - ...
 """
