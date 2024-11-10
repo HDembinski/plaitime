@@ -111,7 +111,6 @@ class ChatView(QtWidgets.QScrollArea):
         )
         layout = QtWidgets.QVBoxLayout()
         layout.addStretch(1.0)
-        layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
         self.scrollable_content = QtWidgets.QWidget()
         self.scrollable_content.setLayout(layout)
         self.setWidget(self.scrollable_content)
