@@ -27,7 +27,7 @@ def save(obj: BaseModel, filename: Path):
                 return
     with closing(
         RotatingFileHandler(
-            filename, mode="w", encoding="utf-8", maxBytes=1, backupCount=10
+            filename, mode="w", encoding="utf-8", maxBytes=1, backupCount=9
         )
     ) as handler:
         handler.setFormatter(NoopFormatter)

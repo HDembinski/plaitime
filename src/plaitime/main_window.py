@@ -26,23 +26,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class InputBox(QtWidgets.QTextEdit):
-    sendMessage = QtCore.Signal()
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setAcceptRichText(False)
-
-    def keyPressEvent(self, event):
-        mod = event.modifiers()
-        match event.key():
-            case QtCore.Qt.Key_Return:
-                if not (mod & QtCore.Qt.KeyboardModifier.ShiftModifier):
-                    self.sendMessage.emit()
-                    return
-        super().keyPressEvent(event)
-
-
 class MainWindow(QtWidgets.QMainWindow):
     character: Character
     generator: Generator | None
@@ -68,27 +51,9 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.character_bar.clipboard_button.clicked.connect(self.copy_to_clipboard)
 
-        # Create central widget and layout
-        central_widget = QtWidgets.QWidget()
-        self.setCentralWidget(central_widget)
-        layout = QtWidgets.QVBoxLayout(central_widget)
-
-        # Create scroll area for messages
         self.chat_widget = ChatWidget(self)
-        layout.addWidget(self.chat_widget)
-
-        # Create input area
-        self.input_box = InputBox()
-        self.input_box.setMaximumHeight(100)
-        self.input_box.setPlaceholderText("Type here...")
-        self.input_box.sendMessage.connect(self.send_message_and_generate_response)
-
-        layout.addWidget(self.input_box)
-
-        # Create send button
-        self.send_button = QtWidgets.QPushButton("Send")
-        self.send_button.clicked.connect(self.send_message_and_generate_response)
-        layout.addWidget(self.send_button)
+        self.chat_widget.sendMessage.connect(self.generate_response)
+        self.setCentralWidget(self.chat_widget)
 
         # Must be at the end
         config = self.load_config()
@@ -100,7 +65,7 @@ class MainWindow(QtWidgets.QMainWindow):
         messages = memory.messages
         if messages and messages[-1].role == "user":
             m = messages.pop()
-            self.input_box.setText(m.content)
+            self.chat_widget.set_input_text(m.content)
         for m in messages:
             self.chat_widget.add(m.role, m.content)
 
@@ -126,7 +91,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.character_bar.set_character_manually(names, self.character.name)
         self.context_size = get_context_size(self.character.model)
         memory = load(MEMORY_DIRECTORY / f"{name}.json", Memory)
-        self.input_box.clear()
         self.load_messages(self.character.prompt, memory)
 
     def save_character(self):
@@ -137,7 +101,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if c.save_conversation:
             widgets = self.chat_widget.get_messages()
             messages = [Message(role=w.role, content=w.content) for w in widgets]
-            user_text = self.get_user_text()
+            user_text = self.chat_widget.get_user_text()
             if user_text:
                 messages.append(Message(role="user", content=user_text))
             if messages:
@@ -200,37 +164,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def undo_last_response(self):
         self.cancel_generator()
-
-        messages = self.chat_widget.get_messages()
-        if len(messages) >= 2:
-            assistant_message = messages.pop()
-            assert assistant_message.role == "assistant"
-            user_message = messages.pop()
-            assert user_message.role == "user"
-            self.input_box.setText(user_message.content)
-            for m in (assistant_message, user_message):
-                m.setParent(None)
-                m.deleteLater()
-
-    def get_user_text(self):
-        return self.input_box.toPlainText().strip()
-
-    def send_message_and_generate_response(self):
-        user_text = self.get_user_text()
-        self.input_box.clear()
-        self.send_button.setEnabled(False)
-        self.input_box.setEnabled(False)
-        self.chat_widget.add("user", user_text)
-        self.generate_response()
+        self.chat_widget.rewind()
 
     def generator_finished(self):
-        self.send_button.setEnabled(True)
-        self.input_box.setEnabled(True)
-        self.input_box.setFocus()
+        self.chat_widget.enable()
         self.generator = None
         estimate_num_tokens(self.character.prompt, self.chat_widget.get_messages())
 
     def generate_response(self):
+        self.chat_widget.disable()
+
         prompt = self.character.prompt
 
         # enable endless chatting by clipping the part of the conversation
@@ -271,8 +214,6 @@ class MainWindow(QtWidgets.QMainWindow):
         clipboard.setText(self.get_dialog_as_text())
 
     def generate_summary(self):
-        self.send_button.setEnabled(False)
-
         prompt = STORY_EXTRACTION_PROMPT.format(self.get_dialog_as_text())
 
         logger.info(prompt)
@@ -286,19 +227,14 @@ class MainWindow(QtWidgets.QMainWindow):
             temperature=0.1,
         )
 
-        def append_text(chunk):
-            cursor = self.input_box.textCursor()
-            cursor.insertText(chunk)
-            self.input_box.setTextCursor(cursor)
-
-        self.generator.nextChunk.connect(append_text)
+        self.generator.nextChunk.connect(self.chat_widget.append_user_text)
         self.generator.finished.connect(self.generate_summary_finished)
         self.cancel_action = self.cancel_generator
         self.generator.start()
 
     def generate_summary_finished(self):
         self.generator = None
-        self.send_button.setEnabled(True)
+        self.chat_widget.enabled()
 
     def cancel_generator(self):
         if self.generator and self.generator.isRunning():
