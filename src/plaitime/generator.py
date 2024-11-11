@@ -1,6 +1,7 @@
 import ollama
 from PySide6 import QtCore
 import logging
+from . import MODEL_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ class Generator(QtCore.QThread):
                 model=self.model,
                 messages=self.messages,
                 stream=True,
+                keep_alive=MODEL_TIMEOUT,
                 options=self.options,
             ):
                 if self.interrupt:

@@ -11,6 +11,7 @@ from . import (
     STORY_EXTRACTION_PROMPT,
     CONTEXT_MARGIN_FRACTION,
     CHARACTERS_PER_TOKEN,
+    MODEL_TIMEOUT,
 )
 from .character_bar import CharacterBar
 from .config_dialog import ConfigDialog
@@ -282,6 +283,8 @@ def get_character_names():
 
 def warmup_model(model, parent):
     thread = QtCore.QThread(parent)
-    thread.run = lambda: ollama.generate(model=model, prompt="", keep_alive="1h")
+    thread.run = lambda: ollama.generate(
+        model=model, prompt="", keep_alive=MODEL_TIMEOUT
+    )
     thread.finished.connect(thread.deleteLater)
     thread.start()

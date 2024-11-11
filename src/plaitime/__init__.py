@@ -12,6 +12,8 @@ MEMORY_DIRECTORY.mkdir(exist_ok=True)
 CHARACTERS_PER_TOKEN = 4  # on average
 CONTEXT_MARGIN_FRACTION = 1 / 8
 
+MODEL_TIMEOUT = "1h"
+
 STORY_EXTRACTION_PROMPT = """
 **Story Summary Expert**
 
