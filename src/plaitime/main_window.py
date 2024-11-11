@@ -169,7 +169,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def generator_finished(self):
         self.chat_widget.enable()
         self.generator = None
-        estimate_num_tokens(self.character.prompt, self.chat_widget.get_messages())
+        num_token = estimate_num_tokens(
+            self.character.prompt, self.chat_widget.get_messages()
+        )
+        self.character_bar.update_num_token(num_token, self.context_size)
 
     def generate_response(self):
         self.chat_widget.disable()
