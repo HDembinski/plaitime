@@ -3,19 +3,11 @@ from pathlib import Path
 from logging.handlers import RotatingFileHandler
 import logging
 from typing import TypeVar
-from .data_models import Memory, Message
-import json
 from contextlib import closing
 
 T = TypeVar("T", bound=BaseModel)
 
 logger = logging.getLogger(__name__)
-
-
-class NoopFormatter:
-    @staticmethod
-    def format(x):
-        return x
 
 
 def save(obj: BaseModel, filename: Path):
@@ -30,8 +22,8 @@ def save(obj: BaseModel, filename: Path):
             filename, mode="w", encoding="utf-8", maxBytes=1, backupCount=9
         )
     ) as handler:
-        handler.setFormatter(NoopFormatter)
-        handler.emit(data)
+        record = logging.makeLogRecord({"msg": data})
+        handler.emit(record)
 
 
 def load(filename: Path, cls: T) -> T:
