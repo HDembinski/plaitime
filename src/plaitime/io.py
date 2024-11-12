@@ -27,12 +27,9 @@ def save(obj: BaseModel, filename: Path):
 
 
 def load(filename: Path, cls: T) -> T:
-    if filename.exists():
-        try:
-            with open(filename, encoding="utf-8") as f:
-                return cls.model_validate_json(f.read())
-        except Exception as e:
-            logger.error(e)
-
-    logger.info(f"{filename} does not exist")
-    return cls()
+    try:
+        with open(filename, encoding="utf-8") as f:
+            return cls.model_validate_json(f.read())
+    except Exception as e:
+        logger.error(e)
+        return cls()

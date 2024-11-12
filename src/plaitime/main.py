@@ -1,12 +1,16 @@
+import logging
 import sys
+from importlib.resources import files
 
 from PySide6 import QtGui, QtWidgets
-from importlib.resources import files
 
 from .main_window import MainWindow
 
 
 def main():
+    logging.basicConfig(level=logging.INFO)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+
     app = QtWidgets.QApplication(sys.argv)
 
     # Set application-wide font

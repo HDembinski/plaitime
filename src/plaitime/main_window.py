@@ -22,8 +22,6 @@ from .util import estimate_num_tokens
 from .io import load, save
 from typing import Callable
 
-logging.basicConfig(level=logging.INFO)
-
 logger = logging.getLogger(__name__)
 
 
@@ -91,7 +89,10 @@ class MainWindow(QtWidgets.QMainWindow):
         names = get_character_names()
         self.character_bar.set_character_manually(names, self.character.name)
         self.context_size = get_context_size(self.character.model)
-        memory = load(MEMORY_DIRECTORY / f"{name}.json", Memory)
+        if self.character.save_conversation:
+            memory = load(MEMORY_DIRECTORY / f"{name}.json", Memory)
+        else:
+            memory = Memory()
         self.load_messages(self.character.prompt, memory)
 
     def save_character(self):
@@ -196,6 +197,7 @@ class MainWindow(QtWidgets.QMainWindow):
         window.append({"role": "system", "content": prompt})
         window.reverse()
 
+        self.cancel_generator(wait=True)
         self.generator = Generator(
             self.character.model, window, temperature=self.character.temperature
         )
@@ -222,6 +224,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         logger.info(prompt)
 
+        self.cancel_generator(wait=True)
         self.generator = Generator(
             self.character.model,
             messages=(
@@ -240,12 +243,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.generator = None
         self.chat_widget.enabled()
 
-    def cancel_generator(self):
-        if self.generator and self.generator.isRunning():
-            self.generator.interrupt = True
-            self.generator.wait()
-            self.generator = None
+    def cancel_generator(self, *, wait=False):
         self.cancel_action = self.undo_last_response
+        if self.generator and self.generator.isRunning():
+            logger.info("Generator is running, interrupting...")
+            self.generator.interrupt = True
+            if wait:
+                logger.info("Waiting for generator to finish...")
+                self.generator.wait()
+                self.generator = None
 
     def remove_last_sentence(self):
         self.cancel_generator()
