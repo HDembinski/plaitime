@@ -121,6 +121,13 @@ class MainWindow(QtWidgets.QMainWindow):
         ):
             path.unlink(missing_ok=True)
 
+    def rename_character(self, old_name: str, new_name: str):
+        logger.info(f"renaming character from {old_name!r} to {new_name!r}")
+        for pdir in (CHARACTER_DIRECTORY, MEMORY_DIRECTORY):
+            old_path = pdir / f"{old_name}.json"
+            if old_path.exists():
+                old_path.rename(pdir / f"{new_name}.json")
+
     def save_all(self):
         self.save_config()
         self.save_character()
@@ -142,7 +149,7 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 character, memory = r
                 if self.character.name != character.name:
-                    self.delete_character(self.character.name)
+                    self.rename_character(self.character.name, character.name)
                 self.character = character
                 names = get_character_names()
                 self.character_bar.set_character_manually(names, character.name)
@@ -177,6 +184,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def generate_response(self):
         self.chat_widget.disable()
+        self.save_character()
 
         prompt = self.character.prompt
 
@@ -257,7 +265,11 @@ class MainWindow(QtWidgets.QMainWindow):
     def warmup_model(self):
         self.cancel_generator(wait=True)
         self.generator = Generate(self.character.model, "")
-        self.generator.finished.connect(self.generator.deleteLater)
+
+        def finished():
+            self.generator = None
+
+        self.generator.finished.connect(finished)
         self.generator.start()
 
 
