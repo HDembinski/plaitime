@@ -11,12 +11,11 @@ from . import (
     STORY_EXTRACTION_PROMPT,
     CONTEXT_MARGIN_FRACTION,
     CHARACTERS_PER_TOKEN,
-    MODEL_TIMEOUT,
 )
 from .character_bar import CharacterBar
 from .config_dialog import ConfigDialog
 from .data_models import Character, Config, Memory, Message
-from .generator import Generator
+from .generator import Chat, Generate, GeneratorThread
 from .chat_widget import ChatWidget
 from .util import estimate_num_tokens
 from .io import load, save
@@ -27,14 +26,14 @@ logger = logging.getLogger(__name__)
 
 class MainWindow(QtWidgets.QMainWindow):
     character: Character
-    generator: Generator | None
+    generator: GeneratorThread | None
     cancel_action: Callable
 
     def __init__(self):
         super().__init__()
         self.character = Character()
         self.generator = None
-        self.cancel_action = self.undo_last_response
+        self.cancel_action = self.rewind
 
         self.setWindowTitle("Plaitime")
         self.setMinimumSize(600, 500)
@@ -85,7 +84,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 name = fname.stem
                 break
         self.character = load(CHARACTER_DIRECTORY / f"{name}.json", Character)
-        warmup_model(self.character.model, self)
+        self.warmup_model()
         names = get_character_names()
         self.character_bar.set_character_manually(names, self.character.name)
         self.context_size = get_context_size(self.character.model)
@@ -164,7 +163,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.save_character()
         self.load_character(name)
 
-    def undo_last_response(self):
+    def rewind(self):
         self.cancel_generator()
         self.chat_widget.rewind()
 
@@ -198,14 +197,14 @@ class MainWindow(QtWidgets.QMainWindow):
         window.reverse()
 
         self.cancel_generator(wait=True)
-        self.generator = Generator(
+        self.generator = Chat(
             self.character.model, window, temperature=self.character.temperature
         )
         mw = self.chat_widget.add("assistant", "")
         self.generator.nextChunk.connect(mw.add_chunk)
         self.generator.error.connect(mw.set_content)
         self.generator.finished.connect(self.generator_finished)
-        self.cancel_action = self.undo_last_response
+        self.cancel_action = self.rewind
         self.generator.start()
 
     def get_dialog_as_text(self):
@@ -225,15 +224,11 @@ class MainWindow(QtWidgets.QMainWindow):
         logger.info(prompt)
 
         self.cancel_generator(wait=True)
-        self.generator = Generator(
+        self.generator = Generate(
             self.character.model,
-            messages=(
-                # {"role": "system", "content": ""},
-                {"role": "user", "content": prompt},
-            ),
+            prompt=prompt,
             temperature=0.1,
         )
-
         self.generator.nextChunk.connect(self.chat_widget.append_user_text)
         self.generator.finished.connect(self.generate_summary_finished)
         self.cancel_action = self.cancel_generator
@@ -244,7 +239,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.chat_widget.enabled()
 
     def cancel_generator(self, *, wait=False):
-        self.cancel_action = self.undo_last_response
+        self.cancel_action = self.rewind
         if self.generator and self.generator.isRunning():
             logger.info("Generator is running, interrupting...")
             self.generator.interrupt = True
@@ -253,19 +248,17 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.generator.wait()
                 self.generator = None
 
-    def remove_last_sentence(self):
-        self.cancel_generator()
-        self.chat_widget.remove_last_sentence()
-
     def keyPressEvent(self, event):
-        mod = event.modifiers()
         if event.key() == QtCore.Qt.Key_Escape:
-            if mod & QtCore.Qt.KeyboardModifier.ShiftModifier:
-                self.remove_last_sentence()
-            else:
-                self.cancel_action()
+            self.cancel_action()
             return
         super().keyPressEvent(event)
+
+    def warmup_model(self):
+        self.cancel_generator(wait=True)
+        self.generator = Generate(self.character.model, "")
+        self.generator.finished.connect(self.generator.deleteLater)
+        self.generator.start()
 
 
 def get_context_size(model):
@@ -285,12 +278,3 @@ def get_character_names():
     for fname in CHARACTER_DIRECTORY.glob("*.json"):
         names.append(fname.stem)
     return names
-
-
-def warmup_model(model, parent):
-    thread = QtCore.QThread(parent)
-    thread.run = lambda: ollama.generate(
-        model=model, prompt="", keep_alive=MODEL_TIMEOUT
-    )
-    thread.finished.connect(thread.deleteLater)
-    thread.start()

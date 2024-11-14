@@ -51,8 +51,13 @@ def test_whitespace_between_lines():
     assert remove_last_sentence(input_str) == expected
 
 
-# Edge cases
 def test_string_with_tabs():
     input_str = "First line.\nSecond\tline.\nThird\tline."
     expected = "First line.\nSecond\tline."
+    assert remove_last_sentence(input_str) == expected
+
+
+def test_paragraphs():
+    input_str = "First line.\n\nSecond line."
+    expected = "First line."
     assert remove_last_sentence(input_str) == expected
