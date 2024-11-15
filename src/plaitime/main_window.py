@@ -65,10 +65,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if messages and messages[-1].role == "user":
             m = messages.pop()
             self.chat_widget.set_input_text(m.content)
-        for i, m in enumerate(messages):
+        for m in messages:
             self.chat_widget.add(m.role, m.content)
-            if i % 10 == 0:
-                QtCore.QCoreApplication.processEvents()
 
         num_token = estimate_num_tokens(prompt, messages)
         self.character_bar.update_num_token(num_token, self.context_size)
@@ -187,7 +185,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def rewind(self, partial=True):
         self.cancel_generator()
-        self.chat_widget.rewind(partial)
+        if self.cancel_mode == "rewind":
+            self.chat_widget.rewind(partial)
 
     def generator_finished(self):
         self.chat_widget.enable()
