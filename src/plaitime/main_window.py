@@ -59,8 +59,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.load_character(config.current_character)
 
     def load_messages(self, prompt: str, memory: Memory):
-        self.chat_widget.clear()
         self.chat_widget.setUpdatesEnabled(False)
+
+        self.chat_widget.clear()
 
         messages = memory.messages
         if messages and messages[-1].role == "user":
