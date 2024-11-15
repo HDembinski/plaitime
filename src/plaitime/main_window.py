@@ -60,6 +60,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def load_messages(self, prompt: str, memory: Memory):
         self.chat_widget.clear()
+        self.chat_widget.setUpdatesEnabled(False)
 
         messages = memory.messages
         if messages and messages[-1].role == "user":
@@ -67,6 +68,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.chat_widget.set_input_text(m.content)
         for m in messages:
             self.chat_widget.add(m.role, m.content)
+
+        self.chat_widget.setUpdatesEnabled(True)
 
         num_token = estimate_num_tokens(prompt, messages)
         self.character_bar.update_num_token(num_token, self.context_size)
