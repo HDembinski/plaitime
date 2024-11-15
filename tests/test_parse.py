@@ -5,19 +5,22 @@ import pytest
 @pytest.mark.parametrize(
     "input, expected",
     [
-        ("Hello *world*!", "Hello <i>world</i>!"),
-        ("*All italic*", "<i>All italic</i>"),
+        ("Hello *world*!", "Hello <em>world</em>!"),
+        ("*All italic*", "<em>All italic</em>"),
         ("No italics here", "No italics here"),
-        ("*First* and *second* italic", "<i>First</i> and <i>second</i> italic"),
+        ("*First* and *second* italic", "<em>First</em> and <em>second</em> italic"),
         (
             "Text with *multiple* words in *italic* style",
-            "Text with <i>multiple</i> words in <i>italic</i> style",
+            "Text with <em>multiple</em> words in <em>italic</em> style",
         ),
         # Edge cases
         ("Unclosed asterisk*", "Unclosed asterisk"),
         ("**", ""),  # Double asterisk
         ("", ""),  # Empty string
-        ("*Unclosed asterisk", "<i>Unclosed asterisk</i>"),
+        ("*Unclosed asterisk", "<em>Unclosed asterisk</em>"),
+        # ("* foo*", "<em> foo</em>"),
+        ("*foo bar baz", "<em>foo bar baz</em>"),
+        ("*foo\nbar*", "<em>foo<br/>bar</em>"),
     ],
 )
 def test_parse(input, expected):

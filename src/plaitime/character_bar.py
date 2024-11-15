@@ -12,6 +12,7 @@ class CharacterBar(QtWidgets.QWidget):
 
         self.config_button = QtWidgets.QPushButton("Configure")
         self.character_selector = QtWidgets.QComboBox()
+        self.character_selector.setSizePolicy(size_policy)
         self.new_button = QtWidgets.QPushButton("New character")
         self.clipboard_button = QtWidgets.QPushButton("Clipboard")
         self.summary_button = QtWidgets.QPushButton("Summary")

@@ -78,7 +78,7 @@ class ChatWidget(QtWidgets.QSplitter):
 
     def clear(self):
         self._chat_view.clear()
-        self._input_area.clear()
+        # self._input_area.clear()
 
     def _new_user_message(self, text: str):
         self._chat_view.add("user", text)
@@ -102,26 +102,24 @@ class ChatWidget(QtWidgets.QSplitter):
     def get_messages(self) -> list[MessageWidget]:
         return self._chat_view.get_messages()
 
-    def rewind_full_message(self):
+    def rewind(self, partial: bool):
         messages = self.get_messages()
-        if len(messages) >= 2:
-            assistant_message = messages.pop()
-            assert assistant_message.role == "assistant"
-            user_message = messages.pop()
-            assert user_message.role == "user"
-            self.set_input_text(user_message.content)
-            for m in (assistant_message, user_message):
-                m.setParent(None)
-                m.deleteLater()
+        if len(messages) < 2:
+            return
 
-    def rewind(self):
-        messages = self.get_messages()
-        if len(messages) >= 2:
-            m = messages.pop()
-            assert m.role == "assistant"
-            m.remove_last_sentence()
-            if not m.content:
-                self.rewind_full_message()
+        assistant_message = messages.pop()
+        assert assistant_message.role == "assistant"
+        if partial:
+            assistant_message.remove_last_sentence()
+            if assistant_message.content:
+                return
+
+        user_message = messages.pop()
+        assert user_message.role == "user"
+        self.set_input_text(user_message.content)
+        for m in (assistant_message, user_message):
+            m.setParent(None)
+            m.deleteLater()
 
     def append_user_text(self, chunk):
         self._input_area.append_user_text(chunk)

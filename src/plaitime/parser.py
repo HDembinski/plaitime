@@ -1,4 +1,4 @@
-def parse(text):
+def parse(text: str) -> str:
     """
     Convert text containing markdown-style italic markers (*) and newlines to HTML.
 
@@ -18,7 +18,7 @@ def parse(text):
             # Even indices are normal text
             result.append(part)
         else:
-            # Odd indices are italic text
-            result.append(f"<i>{part}</i>")
+            # Odd indices are emphasized text
+            result.append(f"<em>{part}</em>")
 
-    return "".join(result).replace("\n", "<br>")
+    return "".join(result).replace("\n", "<br/>")

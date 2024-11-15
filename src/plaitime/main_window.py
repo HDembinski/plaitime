@@ -18,8 +18,8 @@ from .data_models import Character, Config, Memory, Message
 from .generator import Chat, Generate, GeneratorThread
 from .chat_widget import ChatWidget
 from .util import estimate_num_tokens
-from .io import load, save
-from typing import Callable
+from .io import load, save, lock_and_load, save_and_release, rename
+from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -27,13 +27,14 @@ logger = logging.getLogger(__name__)
 class MainWindow(QtWidgets.QMainWindow):
     character: Character
     generator: GeneratorThread | None
-    cancel_action: Callable
+    cancel_mode: str
 
     def __init__(self):
         super().__init__()
         self.character = Character()
         self.generator = None
-        self.cancel_action = self.rewind
+        self.cancel_mode = "rewind"
+        self.uid = str(uuid4())
 
         self.setWindowTitle("Plaitime")
         self.setMinimumSize(600, 500)
@@ -64,8 +65,10 @@ class MainWindow(QtWidgets.QMainWindow):
         if messages and messages[-1].role == "user":
             m = messages.pop()
             self.chat_widget.set_input_text(m.content)
-        for m in messages:
+        for i, m in enumerate(messages):
             self.chat_widget.add(m.role, m.content)
+            if i % 10 == 0:
+                QtCore.QCoreApplication.processEvents()
 
         num_token = estimate_num_tokens(prompt, messages)
         self.character_bar.update_num_token(num_token, self.context_size)
@@ -78,14 +81,17 @@ class MainWindow(QtWidgets.QMainWindow):
         save(config, CONFIG_FILE_NAME)
 
     def load_character(self, name: str):
-        if not name:
-            # load any character
-            for fname in CHARACTER_DIRECTORY.glob("*.json"):
-                name = fname.stem
-                break
-        self.character = load(CHARACTER_DIRECTORY / f"{name}.json", Character)
-        self.warmup_model()
         names = get_character_names()
+        if not name and names:
+            name = names[0]
+        try:
+            self.character = lock_and_load(
+                CHARACTER_DIRECTORY / f"{name}.json", Character, self.uid
+            )
+        except IOError:
+            self.load_character("")
+            return
+        self.warmup_model()
         self.character_bar.set_character_manually(names, self.character.name)
         self.context_size = get_context_size(self.character.model)
         if self.character.save_conversation:
@@ -97,7 +103,11 @@ class MainWindow(QtWidgets.QMainWindow):
     def save_character(self):
         c = self.character
         logger.info(f"saving character {c.name}")
-        save(c, CHARACTER_DIRECTORY / f"{c.name}.json")
+        try:
+            save_and_release(c, CHARACTER_DIRECTORY / f"{c.name}.json", self.uid)
+        except ValueError:
+            logger.warning("cannot save character which is locked by another instance")
+            return
 
         if c.save_conversation:
             widgets = self.chat_widget.get_messages()
@@ -109,7 +119,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 memory = Memory(messages=messages)
                 save(memory, MEMORY_DIRECTORY / f"{c.name}.json")
                 return
-        # if nothing shall be saved if there is nothing to save, remove the file
+        # remove file, if there is nothing to save
         path = MEMORY_DIRECTORY / f"{c.name}.json"
         path.unlink(missing_ok=True)
 
@@ -117,16 +127,21 @@ class MainWindow(QtWidgets.QMainWindow):
         logger.info(f"deleting character {name}")
         for path in (
             CHARACTER_DIRECTORY / f"{name}.json",
+            CHARACTER_DIRECTORY / f"{name}.lock",
             MEMORY_DIRECTORY / f"{name}.json",
         ):
             path.unlink(missing_ok=True)
 
     def rename_character(self, old_name: str, new_name: str):
         logger.info(f"renaming character from {old_name!r} to {new_name!r}")
-        for pdir in (CHARACTER_DIRECTORY, MEMORY_DIRECTORY):
-            old_path = pdir / f"{old_name}.json"
-            if old_path.exists():
-                old_path.rename(pdir / f"{new_name}.json")
+        files = [
+            CHARACTER_DIRECTORY / f"{old_name}.json",
+            CHARACTER_DIRECTORY / f"{old_name}.lock",
+            MEMORY_DIRECTORY / f"{old_name}.json",
+        ]
+        for f in files:
+            if f.exists():
+                rename(f, new_name)
 
     def save_all(self):
         self.save_config()
@@ -170,9 +185,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.save_character()
         self.load_character(name)
 
-    def rewind(self):
+    def rewind(self, partial=True):
         self.cancel_generator()
-        self.chat_widget.rewind()
+        self.chat_widget.rewind(partial)
 
     def generator_finished(self):
         self.chat_widget.enable()
@@ -210,9 +225,9 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         mw = self.chat_widget.add("assistant", "")
         self.generator.nextChunk.connect(mw.add_chunk)
-        self.generator.error.connect(mw.set_content)
+        self.generator.error.connect(self.show_error_message)
         self.generator.finished.connect(self.generator_finished)
-        self.cancel_action = self.rewind
+        self.cancel_mode = "rewind"
         self.generator.start()
 
     def get_dialog_as_text(self):
@@ -228,7 +243,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def generate_summary(self):
         prompt = STORY_EXTRACTION_PROMPT.format(self.get_dialog_as_text())
-
         logger.info(prompt)
 
         self.cancel_generator(wait=True)
@@ -238,16 +252,23 @@ class MainWindow(QtWidgets.QMainWindow):
             temperature=0.1,
         )
         self.generator.nextChunk.connect(self.chat_widget.append_user_text)
+        self.generator.error.connect(self.show_error_message)
         self.generator.finished.connect(self.generate_summary_finished)
-        self.cancel_action = self.cancel_generator
+        self.cancel_mode = "cancel"
         self.generator.start()
+
+    def show_error_message(self, message: str):
+        msg = QtWidgets.QMessageBox()
+        msg.setWindowTitle("Error")
+        msg.setText(message)
+        msg.exec()
 
     def generate_summary_finished(self):
         self.generator = None
-        self.chat_widget.enabled()
+        self.chat_widget.enable()
 
     def cancel_generator(self, *, wait=False):
-        self.cancel_action = self.rewind
+        self.cancel_mode = "rewind"
         if self.generator and self.generator.isRunning():
             logger.info("Generator is running, interrupting...")
             self.generator.interrupt = True
@@ -257,10 +278,14 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.generator = None
 
     def keyPressEvent(self, event):
-        if event.key() == QtCore.Qt.Key_Escape:
-            self.cancel_action()
-            return
-        super().keyPressEvent(event)
+        key = event.key()
+        mod = event.modifiers()
+        if key == QtCore.Qt.Key_Escape:
+            self.rewind(not (mod & QtCore.Qt.KeyboardModifier.ShiftModifier))
+        elif key == QtCore.Qt.Key_Return:
+            self.chat_widget.keyPressEvent(event)
+        else:
+            super().keyPressEvent(event)
 
     def warmup_model(self):
         self.cancel_generator(wait=True)

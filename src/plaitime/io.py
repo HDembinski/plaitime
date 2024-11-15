@@ -27,9 +27,37 @@ def save(obj: BaseModel, filename: Path):
 
 
 def load(filename: Path, cls: T) -> T:
-    try:
-        with open(filename, encoding="utf-8") as f:
-            return cls.model_validate_json(f.read())
-    except Exception as e:
-        logger.error(e)
-        return cls()
+    if filename.exists():
+        try:
+            with open(filename, encoding="utf-8") as f:
+                return cls.model_validate_json(f.read())
+        except Exception as e:
+            logger.error(e)
+    else:
+        logger.warning(f"{filename} does not exist")
+    return cls()
+
+
+def lock_and_load(filename: Path, cls: T, uid: str) -> T:
+    if filename.exists():
+        lock_file = filename.with_suffix(".lock")
+        if lock_file.exists():
+            raise IOError("file is locked")
+        with lock_file.open("w") as f:
+            f.write(uid)
+    return load(filename, cls)
+
+
+def save_and_release(obj: BaseModel, filename: Path, uid: str):
+    lock_file = filename.with_suffix(".lock")
+    if lock_file.exists():
+        with lock_file.open() as f:
+            if f.read() != uid:
+                raise ValueError("cannot save to locked file which I don't own")
+        lock_file.unlink()
+    save(obj, filename)
+
+
+def rename(filename: Path, stem: str):
+    new_name = filename.parent / f"{stem}{filename.suffix}"
+    filename.rename(new_name)

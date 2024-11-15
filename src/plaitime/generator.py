@@ -28,10 +28,17 @@ class GeneratorThread(QtCore.QThread):
             for response in self._generator():
                 if self.interrupt:
                     return
-                chunk = response["message"]["content"]
+                if "message" in response:
+                    chunk = response["message"]["content"]
+                else:
+                    chunk = response["response"]
                 self.nextChunk.emit(chunk)
-        except Exception as e:
-            error_message = f"""Error generating response: {str(e)}\n\n
+        except Exception:
+            import traceback
+
+            error = traceback.format_exc(chain=False)
+
+            error_message = f"""Error generating response{error}\n
 Please make sure that the model '{self.model}' is available.
 You can run 'ollama run {self.model}' in terminal to check."""
             self.error.emit(error_message)
