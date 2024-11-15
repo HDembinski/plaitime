@@ -57,7 +57,13 @@ def test_string_with_tabs():
     assert remove_last_sentence(input_str) == expected
 
 
-def test_paragraphs():
-    input_str = "First line.\n\nSecond line."
-    expected = "First line."
+def test_exclamation_mark():
+    input_str = "First line! Second line!"
+    expected = "First line!"
+    assert remove_last_sentence(input_str) == expected
+
+
+def test_question_mark():
+    input_str = "First line? Second line?"
+    expected = "First line?"
     assert remove_last_sentence(input_str) == expected

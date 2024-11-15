@@ -40,7 +40,14 @@ def remove_last_sentence(s: str) -> str:
     index = len(s)
     if index > 0:
         for _ in range(10):
-            index = s.rfind(".", 0, index - 1) + 1
+            index = (
+                max(
+                    s.rfind(".", 0, index - 1),
+                    s.rfind("!", 0, index - 1),
+                    s.rfind("?", 0, index - 1),
+                )
+                + 1
+            )
             if not re.match(r"^[\s\.]+$", s[index:]):
                 break
             if index == 0:

@@ -245,6 +245,7 @@ class MainWindow(QtWidgets.QMainWindow):
         logger.info(prompt)
 
         self.cancel_generator(wait=True)
+        self.cancel_mode = "cancel"
         self.generator = Generate(
             self.character.model,
             prompt=prompt,
@@ -253,7 +254,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.generator.nextChunk.connect(self.chat_widget.append_user_text)
         self.generator.error.connect(self.show_error_message)
         self.generator.finished.connect(self.generate_summary_finished)
-        self.cancel_mode = "cancel"
         self.generator.start()
 
     def show_error_message(self, message: str):
