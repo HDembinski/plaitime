@@ -2,7 +2,6 @@ from __future__ import annotations
 from PySide6 import QtWidgets, QtCore, QtGui, QtWebEngineWidgets
 from .util import remove_last_sentence
 from .parser import parse as html
-from typing import Callable
 
 
 class MessageView:
@@ -36,11 +35,8 @@ class MessageView:
         else:
             self._js("window.scrollTo(0, document.body.scrollHeight);")
 
-    def _js(self, code: str, callback: Callable | None = None):
-        if callback:
-            self.parent.page().runJavaScript(code, callback)
-        else:
-            self.parent.page().runJavaScript(code)
+    def _js(self, code: str):
+        self.parent.page().runJavaScript(code)
 
     def set_content(self, content: str):
         self.content = content
@@ -61,10 +57,11 @@ class MessageView:
         )
 
     def __del__(self):
-        try:
-            self._js(f"document.body.removeChild({self.p_handle});")
-        except RuntimeError:
-            pass
+        if self.p_handle:  # to suppress this code if necessary
+            try:
+                self._js(f"document.body.removeChild({self.p_handle});")
+            except RuntimeError:
+                pass
 
     def mark(self):
         self._js(f"{self.p_handle}.classList.add('mark');")
@@ -78,6 +75,7 @@ class ChatArea(QtWebEngineWidgets.QWebEngineView):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._messages = []
         self.clear()
 
     def add(self, role: str, content: str):
@@ -89,6 +87,9 @@ class ChatArea(QtWebEngineWidgets.QWebEngineView):
         return self._messages
 
     def clear(self):
+        # prevent MessageView.__del__
+        for m in self._messages:
+            m.p_handle = ""
         self._messages = []
         self.setHtml("""
 <!DOCTYPE html>
