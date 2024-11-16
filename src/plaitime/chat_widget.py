@@ -130,7 +130,7 @@ p {{
     background-color: {ASSISTANT_COLOR}; /* Color at the start */
   }}
   100% {{
-    background-color: {ASSISTANT_COLOR}4; /* Color at the end */
+    background-color: {USER_COLOR}; /* Color at the end */
   }}
 }}
 .mark {{
