@@ -52,6 +52,7 @@ class MessageView:
         self.set_content(remove_last_sentence(self.content))
 
     def update_view(self, override: str = ""):
+        self.content = self.content.strip()
         code = override if override else html(self.content)
         self._js(
             f"{self.p_handle}.classList.remove('thinking');"
@@ -78,6 +79,7 @@ class ChatArea(QtWebEngineWidgets.QWebEngineView):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setContextMenuPolicy(QtGui.Qt.ContextMenuPolicy.NoContextMenu)
         self._messages = []
         self.clear()
 
