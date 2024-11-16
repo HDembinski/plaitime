@@ -1,5 +1,133 @@
-from PySide6 import QtWidgets, QtCore, QtGui
-from .message_widget import MessageWidget
+from __future__ import annotations
+from PySide6 import QtWidgets, QtCore, QtGui, QtWebEngineWidgets
+from .util import remove_last_sentence
+from .parser import parse as html
+from typing import Callable
+
+
+class MessageView:
+    parent: ChatArea
+    role: str
+    content: str
+    p_handle: str
+
+    def __init__(
+        self, parent: QtWidgets.QTextEdit, index: int, role: str, content: str
+    ):
+        self.parent = parent
+        self.role = role
+        self.content = content
+        self.p_handle = f"p_{index}"
+        if not content:
+            if role == "assistant":
+                code = "<i> Thinking ... </i>"
+            else:
+                code = ""
+        else:
+            code = html(content)
+        if code:
+            self._js(
+                f"{self.p_handle} = document.createElement('p');"
+                f"{self.p_handle}.classList.add('{self.role}');"
+                f"{self.p_handle}.innerHTML = '{code}';"
+                f"document.body.appendChild({self.p_handle});"
+                "window.scrollTo(0, document.body.scrollHeight);"
+            )
+        else:
+            self._js("window.scrollTo(0, document.body.scrollHeight);")
+
+    def _js(self, code: str, callback: Callable | None = None):
+        if callback:
+            self.parent.page().runJavaScript(code, callback)
+        else:
+            self.parent.page().runJavaScript(code)
+
+    def set_content(self, content: str):
+        self.content = content
+        self.update_view()
+
+    def add_chunk(self, chunk: str):
+        self.content += chunk
+        self.update_view()
+
+    def remove_last_sentence(self):
+        self.set_content(remove_last_sentence(self.content))
+
+    def update_view(self, override: str = ""):
+        code = override if override else html(self.content)
+        self._js(
+            f"{self.p_handle}.innerHTML = '{code}';"
+            "window.scrollTo(0, document.body.scrollHeight);"
+        )
+
+    def __del__(self):
+        try:
+            self._js(f"document.body.removeChild({self.p_handle});")
+        except RuntimeError:
+            pass
+
+    def mark(self):
+        self._js(f"{self.p_handle}.classList.add('mark');")
+
+    def unmark(self):
+        self._js(f"{self.p_handle}.classList.remove('mark');")
+
+
+class ChatArea(QtWebEngineWidgets.QWebEngineView):
+    _messages: list[MessageView]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.clear()
+
+    def add(self, role: str, content: str):
+        m = MessageView(self, len(self._messages), role, content)
+        self._messages.append(m)
+        return m
+
+    def get_messages(self) -> list[MessageView]:
+        return self._messages
+
+    def clear(self):
+        self._messages = []
+        self.setHtml("""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<style>
+p {
+    padding: 5px;
+    border-radius: 5px;                     
+    width: auto;
+    background-color: #AEAEAE;
+    margin: 3px;
+    font-family: Arial, Helvetica, sans-serif;
+}
+.user {
+    background-color: #F5F5F5;
+    margin-left: 50px;
+}
+.assistant {
+    background-color: #E3F2FD;
+    margin-right: 50px;
+}
+.mark {
+    border: 1px solid black;
+}
+</style>
+<body>
+</body>
+</html>
+""")
+        self.wait_for_load()
+
+    def wait_for_load(self):
+        loop = QtCore.QEventLoop()
+        self.loadFinished.connect(loop.quit)
+        loop.exec()
 
 
 class TextEdit(QtWidgets.QTextEdit):
@@ -14,7 +142,7 @@ class TextEdit(QtWidgets.QTextEdit):
 
     def keyPressEvent(self, event: QtGui.QKeyEvent):
         mod = event.modifiers()
-        if event.key() == QtCore.Qt.Key_Return:
+        if event.key() == QtCore.Qt.Key.Key_Return:
             if not (mod & QtCore.Qt.KeyboardModifier.ShiftModifier):
                 self.sendMessage.emit(self.text())
                 self.clear()
@@ -68,20 +196,20 @@ class ChatWidget(QtWidgets.QSplitter):
 
     def __init__(self, parent=None):
         super().__init__(QtCore.Qt.Orientation.Vertical, parent)
-        self._chat_view = ChatView()
+        self._chat_area = ChatArea()
         self._input_area = InputArea()
-        self.addWidget(self._chat_view)
+        self.addWidget(self._chat_area)
         self.addWidget(self._input_area)
         self.setSizes([300, 100])
 
         self._input_area.sendMessage.connect(self._new_user_message)
 
     def clear(self):
-        self._chat_view.clear()
+        self._chat_area.clear()
         # self._input_area.clear()
 
     def _new_user_message(self, text: str):
-        self._chat_view.add("user", text)
+        self._chat_area.add("user", text)
         self.sendMessage.emit()
 
     def get_user_text(self):
@@ -91,35 +219,33 @@ class ChatWidget(QtWidgets.QSplitter):
         self._input_area.set_text(text)
 
     def keyPressEvent(self, event):
-        if event.key() == QtCore.Qt.Key_Return:
+        if event.key() == QtCore.Qt.Key.Key_Return:
             self._input_area.keyPressEvent(event)
             return
         super().keyPressEvent(event)
 
-    def add(self, role: str, content: str) -> MessageWidget:
-        return self._chat_view.add(role, content)
+    def add(self, role: str, content: str) -> MessageView:
+        return self._chat_area.add(role, content)
 
-    def get_messages(self) -> list[MessageWidget]:
-        return self._chat_view.get_messages()
+    def get_messages(self) -> list[MessageView]:
+        return self._chat_area.get_messages()
 
     def rewind(self, partial: bool):
         messages = self.get_messages()
         if len(messages) < 2:
             return
 
-        assistant_message = messages.pop()
+        assistant_message = messages[-1]
         assert assistant_message.role == "assistant"
         if partial:
             assistant_message.remove_last_sentence()
             if assistant_message.content:
                 return
-
+        # delete assistant message
+        messages.pop()
         user_message = messages.pop()
         assert user_message.role == "user"
         self.set_input_text(user_message.content)
-        for m in (assistant_message, user_message):
-            m.setParent(None)
-            m.deleteLater()
 
     def append_user_text(self, chunk):
         self._input_area.append_user_text(chunk)
@@ -129,31 +255,3 @@ class ChatWidget(QtWidgets.QSplitter):
 
     def disable(self):
         self._input_area.setEnabled(False)
-
-
-class ChatView(QtWidgets.QScrollArea):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWidgetResizable(True)
-        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.verticalScrollBar().rangeChanged.connect(
-            lambda _, vmax: self.verticalScrollBar().setValue(vmax)
-        )
-        layout = QtWidgets.QVBoxLayout()
-        layout.addStretch(1.0)
-        self.scrollable_content = QtWidgets.QWidget()
-        self.scrollable_content.setLayout(layout)
-        self.setWidget(self.scrollable_content)
-
-    def add(self, role: str, content: str):
-        mw = MessageWidget(role, content)
-        self.scrollable_content.layout().addWidget(mw)
-        return mw
-
-    def get_messages(self) -> list[MessageWidget]:
-        return self.scrollable_content.children()[1:]
-
-    def clear(self):
-        for child in self.get_messages():
-            child.setParent(None)
-            child.deleteLater()

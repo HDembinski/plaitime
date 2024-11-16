@@ -21,4 +21,4 @@ def parse(text: str) -> str:
             # Odd indices are emphasized text
             result.append(f"<em>{part}</em>")
 
-    return "".join(result).replace("\n", "<br/>")
+    return "".join(result).replace("\n", "<br/>").replace(r"'", r"\'")
