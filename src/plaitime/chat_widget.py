@@ -2,6 +2,7 @@ from __future__ import annotations
 from PySide6 import QtWidgets, QtCore, QtGui, QtWebEngineWidgets
 from .util import remove_last_sentence
 from .parser import parse as html
+from . import USER_COLOR, ASSISTANT_COLOR, EM_COLOR
 
 
 class MessageView:
@@ -19,7 +20,7 @@ class MessageView:
         self.p_handle = f"p_{index}"
         if not content:
             if role == "assistant":
-                code = "<em> Thinking ... </em>"
+                code = "Thinking..."
             else:
                 code = ""
         else:
@@ -96,7 +97,7 @@ class ChatArea(QtWebEngineWidgets.QWebEngineView):
         for m in self._messages:
             m.p_handle = ""
         self._messages = []
-        self.setHtml("""
+        self.setHtml(f"""
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -104,36 +105,41 @@ class ChatArea(QtWebEngineWidgets.QWebEngineView):
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
 <style>
-p {
+p {{
+    min-height: 1em;
     padding: 5px;
     border-radius: 5px;                     
     width: auto;
     background-color: #AEAEAE;
     margin: 3px;
     font-family: Arial, Helvetica, sans-serif;
-}
-.user {
-    background-color: #F5F5F5;
+}}
+.user {{
+    background-color: {USER_COLOR};
     margin-left: 50px;
-}
-.assistant {
-    background-color: #E3F2FD;
+}}
+.assistant {{
+    background-color: {ASSISTANT_COLOR};
     margin-right: 50px;
-}
-.thinking {
+}}
+.thinking {{
   animation: pulse 0.5s infinite alternate; /* Apply animation */
-}
-@keyframes pulse {
-  0% {
-    background-color: #E3F2FD; /* Color at the start */
-  }
-  100% {
-    background-color: #FFFFFF; /* Color at the end */
-  }
-}
-.mark {
+}}
+@keyframes pulse {{
+  0% {{
+    background-color: {ASSISTANT_COLOR}; /* Color at the start */
+  }}
+  100% {{
+    background-color: {ASSISTANT_COLOR}4; /* Color at the end */
+  }}
+}}
+.mark {{
     border: 1px solid black;
-}
+}}
+em {{
+    font-style: italic;
+    color: {EM_COLOR};
+}}
 </style>
 <body>
 </body>
