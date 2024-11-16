@@ -20,7 +20,7 @@ class MessageView:
         self.p_handle = f"p_{index}"
         if not content:
             if role == "assistant":
-                code = "<i> Thinking ... </i>"
+                code = "<em> Thinking ... </em>"
             else:
                 code = ""
         else:
