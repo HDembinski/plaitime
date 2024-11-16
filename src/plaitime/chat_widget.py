@@ -32,6 +32,8 @@ class MessageView:
                 f"document.body.appendChild({self.p_handle});"
                 "window.scrollTo(0, document.body.scrollHeight);"
             )
+            if not content and role == "assistant":
+                self._js(f"{self.p_handle}.classList.add('thinking');")
         else:
             self._js("window.scrollTo(0, document.body.scrollHeight);")
 
@@ -52,6 +54,7 @@ class MessageView:
     def update_view(self, override: str = ""):
         code = override if override else html(self.content)
         self._js(
+            f"{self.p_handle}.classList.remove('thinking');"
             f"{self.p_handle}.innerHTML = '{code}';"
             "window.scrollTo(0, document.body.scrollHeight);"
         )
@@ -114,6 +117,17 @@ p {
 .assistant {
     background-color: #E3F2FD;
     margin-right: 50px;
+}
+.thinking {
+  animation: pulse 0.5s infinite alternate; /* Apply animation */
+}
+@keyframes pulse {
+  0% {
+    background-color: #E3F2FD; /* Color at the start */
+  }
+  100% {
+    background-color: #FFFFFF; /* Color at the end */
+  }
 }
 .mark {
     border: 1px solid black;
