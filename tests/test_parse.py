@@ -21,6 +21,10 @@ import pytest
         # ("* foo*", "<em> foo</em>"),
         ("*foo bar baz", "<em>foo bar baz</em>"),
         ("*foo\nbar*", "<em>foo<br/>bar</em>"),
+        (
+            "A line*foo*\n\n*bar* Another line." "",
+            "A line<em>foo</em><br/><br/><em>bar</em> Another line.",
+        ),
     ],
 )
 def test_parse(input, expected):

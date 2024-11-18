@@ -12,7 +12,7 @@ def parse(text: str) -> str:
 
     result = []
     for i, part in enumerate(parts):
-        if not part or part.isspace():
+        if not part:
             continue
         if i % 2 == 0:
             # Even indices are normal text
