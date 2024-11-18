@@ -77,7 +77,7 @@ class ConfigDialog(QtWidgets.QDialog):
 def generate_widget(field_type: Annotated, value: Any):
     if field_type is bool:
         w = QtWidgets.QCheckBox()
-        w.setEnabled(value)
+        w.setChecked(value)
     elif field_type is ShortString:
         w = QtWidgets.QLineEdit()
         w.setText(value)
@@ -118,7 +118,7 @@ def get_widget_value(
     if isinstance(w, ColorButton):
         return w.get_color()
     if isinstance(w, QtWidgets.QCheckBox):
-        return w.isEnabled()
+        return w.isChecked()
     if isinstance(w, QtWidgets.QDoubleSpinBox):
         return w.value()
     if isinstance(w, QtWidgets.QWidget):
