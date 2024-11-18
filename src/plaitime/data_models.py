@@ -1,11 +1,21 @@
-from pydantic import BaseModel, PositiveFloat
+from pydantic import BaseModel
+from typing import Annotated
+from annotated_types import Interval
+from . import USER_COLOR, ASSISTANT_COLOR, EM_COLOR
+
+
+# Metadata tags
+ShortString = Annotated[str, "short"]
+LongString = Annotated[str, "long"]
+ModelString = Annotated[str, "model"]
+Color = Annotated[str, "color"]
 
 
 class Character(BaseModel):
-    name: str = "Assistant"
-    prompt: str = ""
-    model: str = "llama3.2"
-    temperature: PositiveFloat = 0.7
+    name: ShortString = "Assistant"
+    prompt: LongString = ""
+    model: ModelString = "llama3.2:latest"
+    temperature: Annotated[float, Interval(gt=0, lt=2)] = 0.7
     save_conversation: bool = True
 
 
@@ -19,5 +29,9 @@ class Memory(BaseModel):
     memories: list[str] = []
 
 
-class Config(BaseModel):
-    current_character: str = ""
+class Settings(BaseModel):
+    character: Annotated[str, "noconfig"] = ""
+    geometry: Annotated[tuple[int, int, int, int], "noconfig"] = (100, 100, 600, 600)
+    user_color: Color = USER_COLOR
+    assistant_color: Color = ASSISTANT_COLOR
+    em_color: Color = EM_COLOR

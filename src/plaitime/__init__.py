@@ -3,7 +3,7 @@ from pathlib import Path
 BASE_DIRECTORY = Path.home() / ".plaitime"
 BASE_DIRECTORY.mkdir(exist_ok=True)
 
-CONFIG_FILE_NAME = BASE_DIRECTORY / "config.json"
+SETTINGS_FILE_NAME = BASE_DIRECTORY / "settings.json"
 CHARACTER_DIRECTORY = BASE_DIRECTORY / "characters"
 CHARACTER_DIRECTORY.mkdir(exist_ok=True)
 MEMORY_DIRECTORY = BASE_DIRECTORY / "memories"
@@ -13,7 +13,7 @@ CHARACTERS_PER_TOKEN = 4  # on average
 CONTEXT_MARGIN_FRACTION = 1 / 8
 
 MODEL_TIMEOUT = "1h"
-USER_COLOR = "#F8F8F8"
+USER_COLOR = "#f8f8f8"
 ASSISTANT_COLOR = "#e6f5ff"
 EM_COLOR = "#034f84"
 

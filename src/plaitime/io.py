@@ -4,6 +4,8 @@ from logging.handlers import RotatingFileHandler
 import logging
 from typing import TypeVar
 from contextlib import closing
+import os
+import psutil
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -17,6 +19,7 @@ def save(obj: BaseModel, filename: Path):
             if data == f.read().rstrip():
                 logger.info(f"no change with respect to {filename}")
                 return
+    logger.info(f"saving to {filename}")
     with closing(
         RotatingFileHandler(
             filename, mode="w", encoding="utf-8", maxBytes=1, backupCount=9
@@ -38,22 +41,27 @@ def load(filename: Path, cls: T) -> T:
     return cls()
 
 
-def lock_and_load(filename: Path, cls: T, uid: str) -> T:
+def lock_and_load(filename: Path, cls: T) -> T:
     if filename.exists():
         lock_file = filename.with_suffix(".lock")
         if lock_file.exists():
-            raise IOError("file is locked")
+            with lock_file.open() as f:
+                pid = int(f.read())
+            active_pids = [proc.pid for proc in psutil.process_iter(attrs=["pid"])]
+            if pid in active_pids:
+                raise IOError("file is locked")
         with lock_file.open("w") as f:
-            f.write(uid)
+            f.write(str(os.getpid()))
     return load(filename, cls)
 
 
-def save_and_release(obj: BaseModel, filename: Path, uid: str):
+def save_and_release(obj: BaseModel, filename: Path):
+    pid = os.getpid()
     lock_file = filename.with_suffix(".lock")
     if lock_file.exists():
         with lock_file.open() as f:
-            if f.read() != uid:
-                raise ValueError("cannot save to locked file which I don't own")
+            if f.read() != str(pid):
+                raise IOError("cannot save to locked file of another process")
         lock_file.unlink()
     save(obj, filename)
 

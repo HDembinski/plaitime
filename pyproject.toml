@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "plaitime"
 requires-python = ">=3.9"
-dependencies = ["pyside6", "ollama", "mistune", "pydantic"]
+dependencies = ["pyside6", "ollama", "mistune", "pydantic", "annotated_types"]
 authors = [{ name = "Hans Dembinski", email = "hans.dembinski@gmail.com" }]
 readme = "README.md"
 description = "Chat with local AI assistants or roleplay using ollama"

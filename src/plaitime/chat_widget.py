@@ -1,23 +1,24 @@
 from __future__ import annotations
-from PySide6 import QtWidgets, QtCore, QtGui, QtWebEngineWidgets
+from PySide6 import QtWidgets, QtCore, QtGui, QtWebEngineWidgets, QtWebEngineCore
 from .util import remove_last_sentence
 from .parser import parse as html
 from . import USER_COLOR, ASSISTANT_COLOR, EM_COLOR
+from .data_models import Message
+import logging
+
+logger = logging.getLogger(__name__)
 
 
-class MessageView:
-    parent: ChatArea
-    role: str
-    content: str
-    p_handle: str
+class MessageView(Message):
+    _page: QtWebEngineCore.QWebEnginePage
+    _handle: str
 
     def __init__(
-        self, parent: QtWidgets.QTextEdit, index: int, role: str, content: str
+        self, page: QtWebEngineCore.QWebEnginePage, index: int, role: str, content: str
     ):
-        self.parent = parent
-        self.role = role
-        self.content = content
-        self.p_handle = f"p_{index}"
+        super().__init__(role=role, content=content)
+        self._page = page
+        self._handle = f"p_{index}"
         if not content:
             if role == "assistant":
                 code = "Thinking..."
@@ -26,20 +27,21 @@ class MessageView:
         else:
             code = html(content)
         if code:
+            logger.info(f"{content=}\n{code=}")
             self._js(
-                f"{self.p_handle} = document.createElement('p');"
-                f"{self.p_handle}.classList.add('{self.role}');"
-                f"{self.p_handle}.innerHTML = '{code}';"
-                f"document.body.appendChild({self.p_handle});"
+                f"{self._handle} = document.createElement('p');"
+                f"{self._handle}.classList.add('{self.role}');"
+                f"{self._handle}.innerHTML = '{code}';"
+                f"document.body.appendChild({self._handle});"
                 "window.scrollTo(0, document.body.scrollHeight);"
             )
             if not content and role == "assistant":
-                self._js(f"{self.p_handle}.classList.add('thinking');")
+                self._js(f"{self._handle}.classList.add('thinking');")
         else:
             self._js("window.scrollTo(0, document.body.scrollHeight);")
 
     def _js(self, code: str):
-        self.parent.page().runJavaScript(code)
+        self._page.runJavaScript(code)
 
     def set_content(self, content: str):
         self.content = content
@@ -53,26 +55,25 @@ class MessageView:
         self.set_content(remove_last_sentence(self.content))
 
     def update_view(self, override: str = ""):
-        self.content = self.content.strip()
         code = override if override else html(self.content)
         self._js(
-            f"{self.p_handle}.classList.remove('thinking');"
-            f"{self.p_handle}.innerHTML = '{code}';"
+            f"{self._handle}.classList.remove('thinking');"
+            f"{self._handle}.innerHTML = '{code}';"
             "window.scrollTo(0, document.body.scrollHeight);"
         )
 
     def __del__(self):
-        if self.p_handle:  # to suppress this code if necessary
+        if self._handle:  # to suppress this code if necessary
             try:
-                self._js(f"document.body.removeChild({self.p_handle});")
+                self._js(f"document.body.removeChild({self._handle});")
             except RuntimeError:
                 pass
 
     def mark(self):
-        self._js(f"{self.p_handle}.classList.add('mark');")
+        self._js(f"{self._handle}.classList.add('mark');")
 
     def unmark(self):
-        self._js(f"{self.p_handle}.classList.remove('mark');")
+        self._js(f"{self._handle}.classList.remove('mark');")
 
 
 class ChatArea(QtWebEngineWidgets.QWebEngineView):
@@ -85,7 +86,7 @@ class ChatArea(QtWebEngineWidgets.QWebEngineView):
         self.clear()
 
     def add(self, role: str, content: str):
-        m = MessageView(self, len(self._messages), role, content)
+        m = MessageView(self.page(), len(self._messages), role, content)
         self._messages.append(m)
         return m
 
@@ -95,7 +96,7 @@ class ChatArea(QtWebEngineWidgets.QWebEngineView):
     def clear(self):
         # prevent MessageView.__del__
         for m in self._messages:
-            m.p_handle = ""
+            m._handle = ""
         self._messages = []
         self.setHtml(f"""
 <!DOCTYPE html>
@@ -217,9 +218,9 @@ class InputArea(QtWidgets.QWidget):
 class ChatWidget(QtWidgets.QSplitter):
     sendMessage = QtCore.Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent):
         super().__init__(QtCore.Qt.Orientation.Vertical, parent)
-        self._chat_area = ChatArea()
+        self._chat_area = ChatArea(parent)
         self._input_area = InputArea()
         self.addWidget(self._chat_area)
         self.addWidget(self._input_area)
@@ -252,6 +253,16 @@ class ChatWidget(QtWidgets.QSplitter):
 
     def get_messages(self) -> list[MessageView]:
         return self._chat_area.get_messages()
+
+    def load_messages(self, messages: list[Message]):
+        self.setUpdatesEnabled(False)
+        self.clear()
+        if messages and messages[-1].role == "user":
+            m = messages.pop()
+            self.set_input_text(m.content)
+        for m in messages:
+            self.add(m.role, m.content)
+        self.setUpdatesEnabled(True)
 
     def rewind(self, partial: bool):
         messages = self.get_messages()

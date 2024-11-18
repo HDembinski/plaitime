@@ -5,8 +5,8 @@ from ollama import ResponseError
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from . import (
+    SETTINGS_FILE_NAME,
     CHARACTER_DIRECTORY,
-    CONFIG_FILE_NAME,
     MEMORY_DIRECTORY,
     STORY_EXTRACTION_PROMPT,
     CONTEXT_MARGIN_FRACTION,
@@ -14,99 +14,110 @@ from . import (
 )
 from .character_bar import CharacterBar
 from .config_dialog import ConfigDialog
-from .data_models import Character, Config, Memory, Message
+from .data_models import Settings, Character, Memory, Message
 from .generator import Chat, Generate, GeneratorThread
 from .chat_widget import ChatWidget
-from .util import estimate_num_tokens
+from .util import estimate_num_tokens, get_character_names
 from .io import load, save, lock_and_load, save_and_release, rename
-from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
 
 class MainWindow(QtWidgets.QMainWindow):
+    __slots__ = (
+        "settings",
+        "character",
+        "generator",
+        "cancel_mode",
+        "context_size",
+        "chat_widget",
+        "updateCharacterName",
+        "updateContextSize",
+    )
+
+    settings: Settings
     character: Character
     generator: GeneratorThread | None
     cancel_mode: str
+    context_size: int
+    chat_widget: ChatWidget
+    character_bar: CharacterBar
+
+    sendContextSize = QtCore.Signal(int)
+    sendNumToken = QtCore.Signal(int)
 
     def __init__(self):
         super().__init__()
+        self.settings = load(SETTINGS_FILE_NAME, Settings)
         self.character = Character()
         self.generator = None
         self.cancel_mode = "rewind"
-        self.uid = str(uuid4())
 
         self.setWindowTitle("Plaitime")
         self.setMinimumSize(600, 500)
+        self.setGeometry(*self.settings.geometry)
 
-        # Create top bar
-        self.character_bar = CharacterBar()
-        self.setMenuWidget(self.character_bar)
-        self.character_bar.config_button.clicked.connect(self.show_config_dialog)
-        self.character_bar.new_button.clicked.connect(self.new_character)
-        self.character_bar.summary_button.clicked.connect(self.generate_summary)
+        menu_bar = self.menuBar()
+        settings_action = QtGui.QAction("Settings", self)
+        settings_action.triggered.connect(self.configure_settings)
+        menu_bar.addAction(settings_action)
+        char_menu = menu_bar.addMenu("Character")
+        char_conf_action = char_menu.addAction("Configure")
+        char_new_action = char_menu.addAction("New")
+        char_del_action = char_menu.addAction("Delete")
+        char_conf_action.triggered.connect(self.configure_character)
+        char_new_action.triggered.connect(self.new_character)
+        char_del_action.triggered.connect(self.delete_character)
+
+        self.character_bar = CharacterBar(self)
+        menu_bar.setCornerWidget(self.character_bar)
         self.character_bar.character_selector.currentTextChanged.connect(
             self.switch_character
         )
         self.character_bar.clipboard_button.clicked.connect(self.copy_to_clipboard)
+        self.sendContextSize.connect(self.character_bar.set_context_size)
+        self.sendNumToken.connect(self.character_bar.set_num_token)
 
         self.chat_widget = ChatWidget(self)
         self.chat_widget.sendMessage.connect(self.generate_response)
         self.setCentralWidget(self.chat_widget)
 
         # Must be at the end
-        config = self.load_config()
-        self.load_character(config.current_character)
+        self.load_character(self.settings.character)
 
-    def load_messages(self, prompt: str, memory: Memory):
-        self.chat_widget.setUpdatesEnabled(False)
-
-        self.chat_widget.clear()
-
-        messages = memory.messages
-        if messages and messages[-1].role == "user":
-            m = messages.pop()
-            self.chat_widget.set_input_text(m.content)
-        for m in messages:
-            self.chat_widget.add(m.role, m.content)
-
-        self.chat_widget.setUpdatesEnabled(True)
-
-        num_token = estimate_num_tokens(prompt, messages)
-        self.character_bar.update_num_token(num_token, self.context_size)
-
-    def load_config(self) -> Config:
-        return load(CONFIG_FILE_NAME, Config)
-
-    def save_config(self):
-        config = Config(current_character=self.character_bar.current_character())
-        save(config, CONFIG_FILE_NAME)
+    def save_settings(self):
+        self.settings.character = self.character.name
+        g = self.geometry()
+        self.settings.geometry = (g.left(), g.top(), g.width(), g.height())
+        save(self.settings, SETTINGS_FILE_NAME)
 
     def load_character(self, name: str):
+        logger.info(f"loading character {name!r}")
         names = get_character_names()
         if not name and names:
             name = names[0]
         try:
             self.character = lock_and_load(
-                CHARACTER_DIRECTORY / f"{name}.json", Character, self.uid
+                CHARACTER_DIRECTORY / f"{name}.json", Character
             )
         except IOError:
-            self.load_character("")
-            return
-        self.warmup_model()
-        self.character_bar.set_character_manually(names, self.character.name)
-        self.context_size = get_context_size(self.character.model)
+            self.character = Character()
+        self.update_context_size()
+        self.character_bar.set_character_manually(self.character.name)
         if self.character.save_conversation:
-            memory = load(MEMORY_DIRECTORY / f"{name}.json", Memory)
+            memory = load(MEMORY_DIRECTORY / f"{self.character.name}.json", Memory)
         else:
             memory = Memory()
-        self.load_messages(self.character.prompt, memory)
+        self.chat_widget.load_messages(memory.messages)
+        num = estimate_num_tokens(memory.messages, self.character.prompt)
+        self.sendNumToken.emit(num)
+        self.warmup_model()
 
     def save_character(self):
         c = self.character
-        logger.info(f"saving character {c.name}")
+        logger.info(f"saving character {c.name!r}")
         try:
-            save_and_release(c, CHARACTER_DIRECTORY / f"{c.name}.json", self.uid)
+            save_and_release(c, CHARACTER_DIRECTORY / f"{c.name}.json")
         except ValueError:
             logger.warning("cannot save character which is locked by another instance")
             return
@@ -125,15 +136,6 @@ class MainWindow(QtWidgets.QMainWindow):
         path = MEMORY_DIRECTORY / f"{c.name}.json"
         path.unlink(missing_ok=True)
 
-    def delete_character(self, name: str):
-        logger.info(f"deleting character {name}")
-        for path in (
-            CHARACTER_DIRECTORY / f"{name}.json",
-            CHARACTER_DIRECTORY / f"{name}.lock",
-            MEMORY_DIRECTORY / f"{name}.json",
-        ):
-            path.unlink(missing_ok=True)
-
     def rename_character(self, old_name: str, new_name: str):
         logger.info(f"renaming character from {old_name!r} to {new_name!r}")
         files = [
@@ -146,43 +148,54 @@ class MainWindow(QtWidgets.QMainWindow):
                 rename(f, new_name)
 
     def save_all(self):
-        self.save_config()
+        self.save_settings()
         self.save_character()
 
-    def show_config_dialog(self):
-        widgets = self.chat_widget.get_messages()
-        messages = []
-        for w in widgets:
-            messages.append(Message(role=w.role, content=w.content))
-        self.configure_character(self.character, Memory(messages=messages))
-
-    def configure_character(self, character: Character, memory: Memory):
-        dialog = ConfigDialog(character.model_copy(), memory.model_copy(), parent=self)
+    def configure_settings(self):
+        dialog = ConfigDialog(self.settings, parent=self)
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            r: str | tuple[Character, Memory] = dialog.result()
-            if isinstance(r, str):
-                self.delete_character(r)
-                self.load_character("")
-            else:
-                character, memory = r
-                if self.character.name != character.name:
-                    self.rename_character(self.character.name, character.name)
-                self.character = character
-                names = get_character_names()
-                self.character_bar.set_character_manually(names, character.name)
-                self.context_size = get_context_size(self.character.model)
-                self.load_messages(character.prompt, memory)
+            self.settings = dialog.result()
+
+    def configure_character(self):
+        dialog = ConfigDialog(self.character, parent=self)
+        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            character: Character = dialog.result()
+            if self.character.name != character.name:
+                self.rename_character(self.character.name, character.name)
+            self.character = character
+            self.character_bar.set_character_manually(self.character.name)
+            self.update_context_size()
+            num = estimate_num_tokens(
+                self.chat_widget.get_messages(), self.character.prompt
+            )
+            self.sendNumToken.emit(num)
 
     def new_character(self):
         self.save_character()
         # this is important, otherwise the old character is deleted in configure_character
         self.character = Character()
-        self.memory = Memory()
-        self.configure_character(self.character, self.memory)
-        names = get_character_names()
-        self.character_bar.set_character_manually(names, self.character.name)
+        self.chat_widget.load_messages([])
+        self.configure_character()
+
+    def delete_character(self):
+        name = self.character.name
+        logger.info(f"deleting character {name}")
+        for path in (
+            CHARACTER_DIRECTORY / f"{name}.json",
+            CHARACTER_DIRECTORY / f"{name}.lock",
+            MEMORY_DIRECTORY / f"{name}.json",
+        ):
+            path.unlink(missing_ok=True)
+
+    def update_context_size(self):
+        size = get_context_size(self.character.model)
+        self.context_size = size
+        self.sendContextSize.emit(size)
 
     def switch_character(self, name):
+        if name == self.character.name:
+            logger.warning(f"trying to switching same character {name}")
+            return
         logger.info(f"switching character to {name}")
         self.save_character()
         self.load_character(name)
@@ -195,10 +208,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def generator_finished(self):
         self.chat_widget.enable()
         self.generator = None
-        num_token = estimate_num_tokens(
-            self.character.prompt, self.chat_widget.get_messages()
+        num = estimate_num_tokens(
+            self.chat_widget.get_messages(), self.character.prompt
         )
-        self.character_bar.update_num_token(num_token, self.context_size)
+        self.sendNumToken.emit(num)
 
     def generate_response(self):
         self.chat_widget.disable()
@@ -246,7 +259,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def generate_summary(self):
         prompt = STORY_EXTRACTION_PROMPT.format(self.get_dialog_as_text())
-        logger.info(prompt)
 
         self.cancel_generator(wait=True)
         self.cancel_mode = "cancel"
@@ -283,9 +295,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def keyPressEvent(self, event):
         key = event.key()
         mod = event.modifiers()
-        if key == QtCore.Qt.Key_Escape:
+        if key == QtCore.Qt.Key.Key_Escape:
             self.rewind(not (mod & QtCore.Qt.KeyboardModifier.ShiftModifier))
-        elif key == QtCore.Qt.Key_Return:
+        elif key == QtCore.Qt.Key.Key_Return:
             self.chat_widget.keyPressEvent(event)
         else:
             super().keyPressEvent(event)
@@ -311,10 +323,3 @@ def get_context_size(model):
         # model was removed
     except ResponseError:
         return 0
-
-
-def get_character_names():
-    names = []
-    for fname in CHARACTER_DIRECTORY.glob("*.json"):
-        names.append(fname.stem)
-    return names

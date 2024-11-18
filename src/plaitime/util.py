@@ -1,4 +1,4 @@
-from . import CHARACTERS_PER_TOKEN
+from . import CHARACTERS_PER_TOKEN, CHARACTER_DIRECTORY
 from .data_models import Message
 import ollama
 from pydantic import BaseModel
@@ -11,12 +11,19 @@ T = TypeVar("T", bound=BaseModel)
 logger = logging.getLogger(__name__)
 
 
-def estimate_num_tokens(prompt: str, messages: list[Message]):
+def get_character_names():
+    names = []
+    for fname in CHARACTER_DIRECTORY.glob("*.json"):
+        names.append(fname.stem)
+    return names
+
+
+def estimate_num_tokens(messages: list[Message], prompt: str = "") -> int:
     # estimate number of token
     num_char = len(prompt)
     for m in messages:
         num_char += len(m.content)
-    return num_char / CHARACTERS_PER_TOKEN
+    return int(num_char / CHARACTERS_PER_TOKEN)
 
 
 def generate_json_response(
