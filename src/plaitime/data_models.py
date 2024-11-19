@@ -8,7 +8,8 @@ from . import USER_COLOR, ASSISTANT_COLOR, EM_COLOR
 ShortString = Annotated[str, "short"]
 LongString = Annotated[str, "long"]
 ModelString = Annotated[str, "model"]
-Color = Annotated[str, "color"]
+FontString = Annotated[str, "font"]
+ColorString = Annotated[str, "color"]
 
 
 class Character(BaseModel):
@@ -32,6 +33,8 @@ class Memory(BaseModel):
 class Settings(BaseModel):
     character: Annotated[str, "noconfig"] = ""
     geometry: Annotated[tuple[int, int, int, int], "noconfig"] = (100, 100, 600, 600)
-    user_color: Color = USER_COLOR
-    assistant_color: Color = ASSISTANT_COLOR
-    em_color: Color = EM_COLOR
+    font: FontString = "Arial"
+    font_size: Annotated[int, Interval(ge=1, le=100)] = 11
+    user_color: ColorString = USER_COLOR
+    assistant_color: ColorString = ASSISTANT_COLOR
+    em_color: ColorString = EM_COLOR

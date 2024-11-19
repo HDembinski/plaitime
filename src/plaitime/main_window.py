@@ -46,8 +46,8 @@ class MainWindow(QtWidgets.QMainWindow):
     sendContextSize = QtCore.Signal(int)
     sendNumToken = QtCore.Signal(int)
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent)
         self.settings = load(SETTINGS_FILE_NAME, Settings)
         self.character = Character()
         self.generator = None

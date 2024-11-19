@@ -9,18 +9,18 @@ logger = logging.getLogger(__name__)
 
 
 class MessageView(Message):
-    _view: QtWebEngineWidgets.QWebEngineView
+    _page: QtWebEngineCore.QWebEnginePage
     _handle: str
 
     def __init__(
         self,
-        view: QtWebEngineWidgets.QWebEngineView,
+        page: QtWebEngineCore.QWebEnginePage,
         index: int,
         role: str,
         content: str,
     ):
         super().__init__(role=role, content=content)
-        self._view = view
+        self._page = page
         self._handle = f"p_{index}"
         if not content:
             if role == "assistant":
@@ -43,7 +43,7 @@ class MessageView(Message):
             self._js("window.scrollTo(0, document.body.scrollHeight);")
 
     def _js(self, code: str):
-        self._view.page().runJavaScript(code)
+        self._page.runJavaScript(code)
 
     def set_content(self, content: str):
         self.content = content
@@ -90,7 +90,7 @@ class ChatArea(QtWebEngineWidgets.QWebEngineView):
         self.clear()
 
     def add(self, role: str, content: str):
-        m = MessageView(self, len(self._messages), role, content)
+        m = MessageView(self.page(), len(self._messages), role, content)
         self._messages.append(m)
         return m
 
@@ -117,7 +117,8 @@ p {{
     width: auto;
     background-color: #AEAEAE;
     margin: 3px;
-    font-family: Arial, Helvetica, sans-serif;
+    font-family: {self._settings.font};
+    font-size: {self._settings.font_size}pt;
 }}
 .user {{
     background-color: {self._settings.user_color};
@@ -225,6 +226,7 @@ class ChatWidget(QtWidgets.QSplitter):
 
     def __init__(self, settings: Settings, parent):
         super().__init__(QtCore.Qt.Orientation.Vertical, parent)
+        self.setFont(QtGui.QFont(settings.font, settings.font_size))
         self._chat_area = ChatArea(settings, self)
         self._input_area = InputArea(self)
         self.addWidget(self._chat_area)

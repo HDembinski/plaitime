@@ -4,9 +4,10 @@ from .data_models import (
     ShortString,
     LongString,
     ModelString,
-    Color,
+    FontString,
+    ColorString,
 )
-from typing import Annotated, Any
+from typing import Annotated
 from annotated_types import Interval
 from pydantic import BaseModel
 
@@ -16,19 +17,19 @@ class ColorButton(QtWidgets.QPushButton):
 
     def __init__(self, color: str, parent=None):
         super().__init__(parent)
-        self.set_color(QtGui.QColor.fromString(color))
-        self.clicked.connect(self.choose_color)
+        self.set(QtGui.QColor.fromString(color))
+        self.clicked.connect(self.choose)
 
-    def set_color(self, color):
+    def set(self, color: QtGui.QColor):
         self._color = color
         self.setStyleSheet(f"background-color: {color.name()};")
 
-    def choose_color(self):
+    def choose(self):
         color = QtWidgets.QColorDialog.getColor(self._color, None, "Choose Color")
         if color.isValid():
-            self.set_color(color)
+            self.set(color)
 
-    def get_color(self):
+    def get(self) -> str:
         return self._color.name()
 
 
@@ -74,7 +75,10 @@ class ConfigDialog(QtWidgets.QDialog):
         return self._model_cls.model_validate(d)
 
 
-def generate_widget(field_type: Annotated, value: Any):
+def generate_widget(
+    field_type: Annotated[str | int | float, ...] | bool,
+    value: str | int | float | bool,
+):
     if field_type is bool:
         w = QtWidgets.QCheckBox()
         w.setChecked(value)
@@ -91,25 +95,37 @@ def generate_widget(field_type: Annotated, value: Any):
         w = QtWidgets.QComboBox()
         w.addItems(sorted(models))
         w.setCurrentText(value)
-    elif field_type is Color:
+    elif field_type is ColorString:
         w = ColorButton(value)
-    elif field_type.__metadata__[0] == "noconfig":
-        w = None
-    elif field_type.__origin__ is float:
-        w = QtWidgets.QDoubleSpinBox()
-        interval: Interval = field_type.__metadata__[0]
-        w.setRange(interval.ge, interval.le)
-        w.setSingleStep(0.1)
-        w.setDecimals(1)
-        w.setValue(value)
+    elif field_type is FontString:
+        w = QtWidgets.QFontComboBox()
+        w.setCurrentFont(QtGui.QFont(value))
     else:
-        assert False, f"{field_type} not implemented"
+        # must be Annotated[...] when arriving here
+        assert hasattr(field_type, "__metadata__")
+        md = field_type.__metadata__[0]
+        if md == "noconfig":
+            w = None
+        elif field_type.__origin__ is float:
+            w = QtWidgets.QDoubleSpinBox()
+            interval: Interval = md
+            w.setRange(interval.ge, interval.le)
+            w.setSingleStep(0.1)
+            w.setDecimals(1)
+            w.setValue(value)
+        elif field_type.__origin__ is int:
+            w = QtWidgets.QSpinBox()
+            interval: Interval = md
+            w.setRange(interval.ge, interval.le)
+            w.setValue(value)
+        else:
+            assert False, f"{field_type} not implemented"
     return w
 
 
 def get_widget_value(
-    w: QtWidgets.QWidget | str | float | bool | int,
-) -> str | float | bool:
+    w: QtWidgets.QWidget | str | int | float | bool,
+) -> str | int | float | bool:
     if isinstance(w, QtWidgets.QTextEdit):
         return w.toPlainText()
     if isinstance(w, QtWidgets.QLineEdit):
@@ -117,10 +133,12 @@ def get_widget_value(
     if isinstance(w, QtWidgets.QComboBox):
         return w.currentText()
     if isinstance(w, ColorButton):
-        return w.get_color()
+        return w.get()
+    if isinstance(w, QtWidgets.QFontComboBox):
+        return w.font().family()
     if isinstance(w, QtWidgets.QCheckBox):
         return w.isChecked()
-    if isinstance(w, QtWidgets.QDoubleSpinBox):
+    if isinstance(w, QtWidgets.QDoubleSpinBox | QtWidgets.QSpinBox):
         return w.value()
     if isinstance(w, QtWidgets.QWidget):
         assert False, f"{w} not implement"
