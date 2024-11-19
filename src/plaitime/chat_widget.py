@@ -195,6 +195,8 @@ class InputArea(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self.edit)
         layout.addWidget(self.summary_button)
+        layout.setSpacing(1)
+        layout.setContentsMargins(3, 0, 3, 0)
         self.setLayout(layout)
 
     def setEnabled(self, yes):
