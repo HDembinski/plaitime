@@ -78,12 +78,28 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sendContextSize.connect(self.character_bar.set_context_size)
         self.sendNumToken.connect(self.character_bar.set_num_token)
 
-        self.chat_widget = ChatWidget(self.settings, self)
-        self.chat_widget.sendMessage.connect(self.generate_response)
+        self.make_chat_widget()
         self.setCentralWidget(self.chat_widget)
 
         # Must be at the end
         self.load_character(self.settings.character)
+
+    def make_chat_widget(self, reload: bool = False):
+        if reload:
+            # save messages
+            messages = self.chat_widget.get_messages()
+            # delete old chat widget
+            self.chat_widget.setParent(None)
+            self.chat_widget.deleteLater()
+
+        self.chat_widget = ChatWidget(self.settings, self)
+        self.chat_widget.sendMessage.connect(self.generate_response)
+        self.chat_widget.sendSummaryClick.connect(self.generate_summary)
+        self.setCentralWidget(self.chat_widget)
+
+        if reload:
+            # reload messages
+            self.chat_widget.load_messages(messages)
 
     def save_settings(self):
         self.settings.character = self.character.name
@@ -156,17 +172,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             self.settings = dialog.result()
             # colors changed, we need to reload the web view
-            # save messages
-            messages = self.chat_widget.get_messages()
-            # delete old chat widget
-            self.chat_widget.setParent(None)
-            self.chat_widget.deleteLater()
-            # make new chat widget and reconnect signals
-            self.chat_widget = ChatWidget(self.settings, self)
-            self.chat_widget.sendMessage.connect(self.generate_response)
-            self.setCentralWidget(self.chat_widget)
-            # reload messages
-            self.chat_widget.load_messages(messages)
+            self.make_chat_widget(reload=True)
 
     def configure_character(self):
         dialog = ConfigDialog(self.character, parent=self)

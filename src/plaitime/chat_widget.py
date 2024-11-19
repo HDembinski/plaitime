@@ -185,19 +185,17 @@ class TextEdit(QtWidgets.QTextEdit):
 
 
 class InputArea(QtWidgets.QWidget):
-    sendMessage = QtCore.Signal(str)
-
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setMinimumSize(0, 100)
 
         self.edit = TextEdit()
-        self.edit.sendMessage.connect(self.sendMessage)
+        self.summary_button = QtWidgets.QPushButton("Summary")
 
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self.edit)
+        layout.addWidget(self.summary_button)
         self.setLayout(layout)
-
-        self.setMinimumSize(0, 100)
 
     def setEnabled(self, yes):
         super().setEnabled(yes)
@@ -221,6 +219,7 @@ class InputArea(QtWidgets.QWidget):
 
 class ChatWidget(QtWidgets.QSplitter):
     sendMessage = QtCore.Signal()
+    sendSummaryClick = QtCore.Signal()
 
     def __init__(self, settings: Settings, parent):
         super().__init__(QtCore.Qt.Orientation.Vertical, parent)
@@ -230,7 +229,8 @@ class ChatWidget(QtWidgets.QSplitter):
         self.addWidget(self._input_area)
         self.setSizes([300, 100])
 
-        self._input_area.sendMessage.connect(self._new_user_message)
+        self._input_area.edit.sendMessage.connect(self._new_user_message)
+        self._input_area.summary_button.clicked.connect(self.sendSummaryClick)
 
     def clear(self):
         self._chat_area.clear()
