@@ -8,19 +8,21 @@ class CharacterBar(QtWidgets.QWidget):
 
         size_policy = QtWidgets.QSizePolicy(
             QtWidgets.QSizePolicy.Policy.Expanding,
-            QtWidgets.QSizePolicy.Policy.Fixed,
+            QtWidgets.QSizePolicy.Policy.Preferred,
         )
         self.setSizePolicy(size_policy)
 
-        self.character_selector = QtWidgets.QComboBox()
+        self.character_selector = QtWidgets.QComboBox(self)
         self.character_selector.setSizePolicy(size_policy)
+        self.character_selector.setMinimumWidth(200)
         self.clipboard_button = QtWidgets.QPushButton("Clipboard")
-        self.num_token = QtWidgets.QLabel()
+        self.num_token = QtWidgets.QLabel(self)
 
         layout = QtWidgets.QHBoxLayout()
         layout.addWidget(self.character_selector)
         layout.addWidget(self.clipboard_button)
         layout.addWidget(self.num_token)
+        layout.setContentsMargins(0, 3, 5, 0)
         self.setLayout(layout)
 
         self.context_size = 0

@@ -78,7 +78,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sendContextSize.connect(self.character_bar.set_context_size)
         self.sendNumToken.connect(self.character_bar.set_num_token)
 
-        self.chat_widget = ChatWidget(self)
+        self.chat_widget = ChatWidget(self.settings, self)
         self.chat_widget.sendMessage.connect(self.generate_response)
         self.setCentralWidget(self.chat_widget)
 
@@ -155,6 +155,18 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog = ConfigDialog(self.settings, parent=self)
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             self.settings = dialog.result()
+            # colors changed, we need to reload the web view
+            # save messages
+            messages = self.chat_widget.get_messages()
+            # delete old chat widget
+            self.chat_widget.setParent(None)
+            self.chat_widget.deleteLater()
+            # make new chat widget and reconnect signals
+            self.chat_widget = ChatWidget(self.settings, self)
+            self.chat_widget.sendMessage.connect(self.generate_response)
+            self.setCentralWidget(self.chat_widget)
+            # reload messages
+            self.chat_widget.load_messages(messages)
 
     def configure_character(self):
         dialog = ConfigDialog(self.character, parent=self)

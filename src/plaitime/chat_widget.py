@@ -2,22 +2,25 @@ from __future__ import annotations
 from PySide6 import QtWidgets, QtCore, QtGui, QtWebEngineWidgets, QtWebEngineCore
 from .util import remove_last_sentence
 from .parser import parse as html
-from . import USER_COLOR, ASSISTANT_COLOR, EM_COLOR
-from .data_models import Message
+from .data_models import Message, Settings
 import logging
 
 logger = logging.getLogger(__name__)
 
 
 class MessageView(Message):
-    _page: QtWebEngineCore.QWebEnginePage
+    _view: QtWebEngineWidgets.QWebEngineView
     _handle: str
 
     def __init__(
-        self, page: QtWebEngineCore.QWebEnginePage, index: int, role: str, content: str
+        self,
+        view: QtWebEngineWidgets.QWebEngineView,
+        index: int,
+        role: str,
+        content: str,
     ):
         super().__init__(role=role, content=content)
-        self._page = page
+        self._view = view
         self._handle = f"p_{index}"
         if not content:
             if role == "assistant":
@@ -27,7 +30,6 @@ class MessageView(Message):
         else:
             code = html(content)
         if code:
-            logger.info(f"{content=}\n{code=}")
             self._js(
                 f"{self._handle} = document.createElement('p');"
                 f"{self._handle}.classList.add('{self.role}');"
@@ -41,7 +43,7 @@ class MessageView(Message):
             self._js("window.scrollTo(0, document.body.scrollHeight);")
 
     def _js(self, code: str):
-        self._page.runJavaScript(code)
+        self._view.page().runJavaScript(code)
 
     def set_content(self, content: str):
         self.content = content
@@ -77,16 +79,18 @@ class MessageView(Message):
 
 
 class ChatArea(QtWebEngineWidgets.QWebEngineView):
+    _settings: Settings
     _messages: list[MessageView]
 
-    def __init__(self, parent=None):
+    def __init__(self, settings: Settings, parent=None):
         super().__init__(parent)
         self.setContextMenuPolicy(QtGui.Qt.ContextMenuPolicy.NoContextMenu)
+        self._settings = settings
         self._messages = []
         self.clear()
 
     def add(self, role: str, content: str):
-        m = MessageView(self.page(), len(self._messages), role, content)
+        m = MessageView(self, len(self._messages), role, content)
         self._messages.append(m)
         return m
 
@@ -116,11 +120,11 @@ p {{
     font-family: Arial, Helvetica, sans-serif;
 }}
 .user {{
-    background-color: {USER_COLOR};
+    background-color: {self._settings.user_color};
     margin-left: 50px;
 }}
 .assistant {{
-    background-color: {ASSISTANT_COLOR};
+    background-color: {self._settings.assistant_color};
     margin-right: 50px;
 }}
 .thinking {{
@@ -128,10 +132,10 @@ p {{
 }}
 @keyframes pulse {{
   0% {{
-    background-color: {ASSISTANT_COLOR}; /* Color at the start */
+    background-color: {self._settings.assistant_color}; /* Color at the start */
   }}
   100% {{
-    background-color: {USER_COLOR}; /* Color at the end */
+    background-color: {self._settings.user_color}; /* Color at the end */
   }}
 }}
 .mark {{
@@ -139,7 +143,7 @@ p {{
 }}
 em {{
     font-style: italic;
-    color: {EM_COLOR};
+    color: {self._settings.em_color};
 }}
 </style>
 <body>
@@ -218,10 +222,10 @@ class InputArea(QtWidgets.QWidget):
 class ChatWidget(QtWidgets.QSplitter):
     sendMessage = QtCore.Signal()
 
-    def __init__(self, parent):
+    def __init__(self, settings: Settings, parent):
         super().__init__(QtCore.Qt.Orientation.Vertical, parent)
-        self._chat_area = ChatArea(parent)
-        self._input_area = InputArea()
+        self._chat_area = ChatArea(settings, self)
+        self._input_area = InputArea(self)
         self.addWidget(self._chat_area)
         self.addWidget(self._input_area)
         self.setSizes([300, 100])

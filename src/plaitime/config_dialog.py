@@ -24,7 +24,7 @@ class ColorButton(QtWidgets.QPushButton):
         self.setStyleSheet(f"background-color: {color.name()};")
 
     def choose_color(self):
-        color = QtWidgets.QColorDialog.getColor(self._color, self, "Choose Color")
+        color = QtWidgets.QColorDialog.getColor(self._color, None, "Choose Color")
         if color.isValid():
             self.set_color(color)
 
