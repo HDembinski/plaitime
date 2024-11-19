@@ -174,11 +174,11 @@ class MainWindow(QtWidgets.QMainWindow):
             # colors changed, we need to reload the web view
             self.make_chat_widget(reload=True)
 
-    def configure_character(self):
+    def configure_character(self, new_character: bool = False):
         dialog = ConfigDialog(self.character, parent=self)
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             character: Character = dialog.result()
-            if self.character.name != character.name:
+            if not new_character and self.character.name != character.name:
                 self.rename_character(self.character.name, character.name)
             self.character = character
             self.character_bar.set_character_manually(self.character.name)
@@ -193,7 +193,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # this is important, otherwise the old character is deleted in configure_character
         self.character = Character()
         self.chat_widget.load_messages([])
-        self.configure_character()
+        self.configure_character(new_character=True)
 
     def delete_character(self):
         name = self.character.name

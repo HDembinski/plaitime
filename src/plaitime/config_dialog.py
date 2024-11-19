@@ -98,7 +98,8 @@ def generate_widget(field_type: Annotated, value: Any):
     elif field_type.__origin__ is float:
         w = QtWidgets.QDoubleSpinBox()
         interval: Interval = field_type.__metadata__[0]
-        w.setRange(interval.gt, interval.lt)
+        w.setRange(interval.ge, interval.le)
+        w.setSingleStep(0.1)
         w.setDecimals(1)
         w.setValue(value)
     else:

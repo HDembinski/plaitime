@@ -15,7 +15,7 @@ class Character(BaseModel):
     name: ShortString = "Assistant"
     prompt: LongString = ""
     model: ModelString = "llama3.2:latest"
-    temperature: Annotated[float, Interval(gt=0, lt=2)] = 0.7
+    temperature: Annotated[float, Interval(ge=0, le=2)] = 0.7
     save_conversation: bool = True
 
 
