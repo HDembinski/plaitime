@@ -198,6 +198,7 @@ class MainWindow(QtWidgets.QMainWindow):
             MEMORY_DIRECTORY / f"{name}.json",
         ):
             path.unlink(missing_ok=True)
+        self.load_character("")
 
     def update_context_size(self):
         size = get_context_size(self.character.model)
