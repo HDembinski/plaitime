@@ -48,7 +48,10 @@ class MessageView(Message):
             if not content and role == "assistant":
                 self._js(f"{self._handle}.classList.add('thinking');")
         else:
-            self._js("window.scrollTo(0, document.body.scrollHeight);")
+            self._js(
+                f"{self._handle} = document.createElement('p');"
+                "window.scrollTo(0, document.body.scrollHeight);"
+            )
 
     def _js(self, code: str):
         self._page.runJavaScript(code)
