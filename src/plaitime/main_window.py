@@ -167,6 +167,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.save_settings()
         self.save_character()
 
+    @QtCore.Slot()
     def configure_settings(self):
         dialog = ConfigDialog(self.settings, parent=self)
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
@@ -174,6 +175,7 @@ class MainWindow(QtWidgets.QMainWindow):
             # colors changed, we need to reload the web view
             self.make_chat_widget(reload=True)
 
+    @QtCore.Slot()
     def configure_character(self, new_character: bool = False):
         dialog = ConfigDialog(self.character, parent=self)
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
@@ -187,7 +189,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.chat_widget.get_messages(), self.character.prompt
             )
             self.sendNumToken.emit(num)
+            self.warmup_model()
 
+    @QtCore.Slot()
     def new_character(self):
         self.save_character()
         # this is important, otherwise the old character is deleted in configure_character
@@ -195,6 +199,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.chat_widget.load_messages([])
         self.configure_character(new_character=True)
 
+    @QtCore.Slot()
     def delete_character(self):
         name = self.character.name
         logger.info(f"deleting character {name}")
@@ -211,6 +216,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.context_size = size
         self.sendContextSize.emit(size)
 
+    @QtCore.Slot(str)
     def switch_character(self, name):
         if name == self.character.name:
             logger.warning(f"trying to switching same character {name}")
@@ -224,7 +230,12 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.cancel_mode == "rewind":
             self.chat_widget.rewind(partial)
 
+    @QtCore.Slot()
     def generator_finished(self):
+        # trim excess whitespace
+        messages = self.chat_widget.get_messages()
+        messages[-1].set_content(messages[-1].content.strip())
+
         self.chat_widget.enable()
         self.generator = None
         num = estimate_num_tokens(
@@ -272,10 +283,12 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         return text
 
+    @QtCore.Slot()
     def copy_to_clipboard(self):
         clipboard = QtGui.QGuiApplication.clipboard()
         clipboard.setText(self.get_dialog_as_text())
 
+    @QtCore.Slot()
     def generate_summary(self):
         prompt = STORY_EXTRACTION_PROMPT.format(self.get_dialog_as_text())
 
@@ -286,17 +299,19 @@ class MainWindow(QtWidgets.QMainWindow):
             prompt=prompt,
             temperature=0.1,
         )
-        self.generator.nextChunk.connect(self.chat_widget.append_user_text)
+        self.generator.nextChunk.connect(self.chat_widget.add_user_text)
         self.generator.error.connect(self.show_error_message)
         self.generator.finished.connect(self.generate_summary_finished)
         self.generator.start()
 
+    @QtCore.Slot(str)
     def show_error_message(self, message: str):
         msg = QtWidgets.QMessageBox()
         msg.setWindowTitle("Error")
         msg.setText(message)
         msg.exec()
 
+    @QtCore.Slot()
     def generate_summary_finished(self):
         self.generator = None
         self.chat_widget.enable()
@@ -322,9 +337,12 @@ class MainWindow(QtWidgets.QMainWindow):
             super().keyPressEvent(event)
 
     def warmup_model(self):
-        self.cancel_generator(wait=True)
+        if self.generator and self.generator.isRunning():
+            return
+
         self.generator = Generate(self.character.model, "")
 
+        @QtCore.Slot()
         def finished():
             self.generator = None
 

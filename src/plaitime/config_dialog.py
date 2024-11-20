@@ -52,7 +52,7 @@ class ConfigDialog(QtWidgets.QDialog):
             else:
                 self._widgets.append(value)
 
-        vlayout = QtWidgets.QVBoxLayout()
+        vlayout = QtWidgets.QVBoxLayout(self)
         vlayout.addLayout(clayout)
 
         # Dialog buttons
@@ -65,7 +65,6 @@ class ConfigDialog(QtWidgets.QDialog):
 
         # Main layout
         vlayout.addWidget(button_box)
-        self.setLayout(vlayout)
 
     def result(self):
         d = {}

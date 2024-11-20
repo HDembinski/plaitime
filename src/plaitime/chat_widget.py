@@ -1,5 +1,12 @@
 from __future__ import annotations
-from PySide6 import QtWidgets, QtCore, QtGui, QtWebEngineWidgets, QtWebEngineCore
+from PySide6 import (
+    QtWidgets,
+    QtCore,
+    QtGui,
+    QtWebEngineWidgets,
+    QtWebEngineCore,
+    QtWebChannel,
+)
 from .util import remove_last_sentence
 from .parser import parse as html
 from .data_models import Message, Settings
@@ -33,6 +40,7 @@ class MessageView(Message):
             self._js(
                 f"{self._handle} = document.createElement('p');"
                 f"{self._handle}.classList.add('{self.role}');"
+                f"{self._handle}.onclick = function() {{ web_bridge.edit_message('{self._handle}'); }};"
                 f"{self._handle}.innerHTML = '{code}';"
                 f"document.body.appendChild({self._handle});"
                 "window.scrollTo(0, document.body.scrollHeight);"
@@ -47,16 +55,17 @@ class MessageView(Message):
 
     def set_content(self, content: str):
         self.content = content
-        self.update_view()
+        self._update_view()
 
+    @QtCore.Slot(str)
     def add_chunk(self, chunk: str):
         self.content += chunk
-        self.update_view()
+        self._update_view()
 
     def remove_last_sentence(self):
         self.set_content(remove_last_sentence(self.content))
 
-    def update_view(self, override: str = ""):
+    def _update_view(self, override: str = ""):
         code = override if override else html(self.content)
         self._js(
             f"{self._handle}.classList.remove('thinking');"
@@ -78,6 +87,46 @@ class MessageView(Message):
         self._js(f"{self._handle}.classList.remove('mark');")
 
 
+class EditDialog(QtWidgets.QDialog):
+    def __init__(self, text: str, parent):
+        super().__init__(parent)
+        self.setWindowTitle("Edit message")
+
+        self.text_edit = QtWidgets.QTextEdit(self)
+        self.text_edit.setAcceptRichText(False)
+        self.text_edit.setPlainText(text)
+        self.text_edit.setWordWrapMode(QtGui.QTextOption.WrapMode.WordWrap)
+
+        button_box = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Ok
+            | QtWidgets.QDialogButtonBox.StandardButton.Cancel
+        )
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(self.text_edit)
+        layout.addWidget(button_box)
+
+    def result(self):
+        return self.text_edit.toPlainText()
+
+
+class WebBridge(QtCore.QObject):
+    def __init__(self, parent):
+        super().__init__(parent)
+
+    @QtCore.Slot(str)
+    def edit_message(self, paragraph_id: str):
+        chat_area: ChatArea = self.parent()
+        idx = int(paragraph_id[2:])
+        logger.info(f"Edit message {idx}")
+        message = chat_area._messages[idx]
+        dialog = EditDialog(message.content, chat_area)
+        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            message.set_content(dialog.result())
+
+
 class ChatArea(QtWebEngineWidgets.QWebEngineView):
     _settings: Settings
     _messages: list[MessageView]
@@ -87,6 +136,13 @@ class ChatArea(QtWebEngineWidgets.QWebEngineView):
         self.setContextMenuPolicy(QtGui.Qt.ContextMenuPolicy.NoContextMenu)
         self._settings = settings
         self._messages = []
+
+        # Web channel setup
+        channel = QtWebChannel.QWebChannel(self)
+        channel.registerObject("web_bridge", WebBridge(self))
+        self.page().setWebChannel(channel)
+
+        # must be last
         self.clear()
 
     def add(self, role: str, content: str):
@@ -108,12 +164,19 @@ class ChatArea(QtWebEngineWidgets.QWebEngineView):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <script>
+        var web_bridge;
+        new QWebChannel(qt.webChannelTransport, function(channel) {{
+            web_bridge = channel.objects.web_bridge;
+        }});
+    </script>
 </head>
 <style>
 p {{
     min-height: 1em;
     padding: 5px;
-    border-radius: 5px;                     
+    border-radius: 5px;
     width: auto;
     background-color: #AEAEAE;
     margin: 3px;
@@ -190,15 +253,14 @@ class InputArea(QtWidgets.QWidget):
         super().__init__(parent)
         self.setMinimumSize(0, 100)
 
-        self.edit = TextEdit()
-        self.summary_button = QtWidgets.QPushButton("Summary")
+        self.edit = TextEdit(self)
+        self.summary_button = QtWidgets.QPushButton("Summary", self)
 
-        layout = QtWidgets.QVBoxLayout()
+        layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(self.edit)
         layout.addWidget(self.summary_button)
         layout.setSpacing(1)
         layout.setContentsMargins(3, 0, 3, 0)
-        self.setLayout(layout)
 
     def setEnabled(self, yes):
         super().setEnabled(yes)
@@ -214,7 +276,7 @@ class InputArea(QtWidgets.QWidget):
     def set_text(self, text: str):
         return self.edit.set_text(text)
 
-    def append_user_text(self, chunk: str):
+    def add_user_text(self, chunk: str):
         cursor = self.edit.textCursor()
         cursor.insertText(chunk)
         self.edit.setTextCursor(cursor)
@@ -233,14 +295,15 @@ class ChatWidget(QtWidgets.QSplitter):
         self.addWidget(self._input_area)
         self.setSizes([300, 100])
 
-        self._input_area.edit.sendMessage.connect(self._new_user_message)
+        self._input_area.edit.sendMessage.connect(self.new_user_message)
         self._input_area.summary_button.clicked.connect(self.sendSummaryClick)
 
     def clear(self):
         self._chat_area.clear()
         # self._input_area.clear()
 
-    def _new_user_message(self, text: str):
+    @QtCore.Slot(str)
+    def new_user_message(self, text: str):
         self._chat_area.add("user", text)
         self.sendMessage.emit()
 
@@ -289,8 +352,9 @@ class ChatWidget(QtWidgets.QSplitter):
         assert user_message.role == "user"
         self.set_input_text(user_message.content)
 
-    def append_user_text(self, chunk):
-        self._input_area.append_user_text(chunk)
+    @QtCore.Slot(str)
+    def add_user_text(self, chunk: str):
+        self._input_area.add_user_text(chunk)
 
     def enable(self):
         self._input_area.setEnabled(True)

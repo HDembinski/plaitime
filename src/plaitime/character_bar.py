@@ -1,4 +1,4 @@
-from PySide6 import QtWidgets
+from PySide6 import QtWidgets, QtCore
 from .util import get_character_names
 
 
@@ -38,9 +38,11 @@ class CharacterBar(QtWidgets.QWidget):
         self.character_selector.setCurrentText(name)
         self.character_selector.blockSignals(False)
 
+    @QtCore.Slot(int)
     def set_context_size(self, n: int):
         self.context_size = n
 
+    @QtCore.Slot(int)
     def set_num_token(self, num: int):
         if num < 0:
             text = ""
