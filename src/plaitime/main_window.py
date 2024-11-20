@@ -103,7 +103,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.warmup_model()
 
     def save_session(self):
-        return
         c = self.session
         logger.info(f"saving session {c.name!r}")
         try:
