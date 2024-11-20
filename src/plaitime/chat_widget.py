@@ -10,24 +10,25 @@ from PySide6 import (
 from .util import remove_last_sentence
 from .parser import parse as html
 from .data_models import Message, Settings
+from .text_edit import TextEdit
 import logging
 
 logger = logging.getLogger(__name__)
 
 
 class MessageView(Message):
-    _page: QtWebEngineCore.QWebEnginePage
+    _parent: ChatArea
     _handle: str
 
     def __init__(
         self,
-        page: QtWebEngineCore.QWebEnginePage,
+        parent: ChatArea,
         index: int,
         role: str,
         content: str,
     ):
         super().__init__(role=role, content=content)
-        self._page = page
+        self._parent = parent
         self._handle = f"p_{index}"
         if not content:
             if role == "assistant":
@@ -37,7 +38,7 @@ class MessageView(Message):
         else:
             code = html(content)
         if code:
-            self._js(
+            self._parent.js(
                 f"{self._handle} = document.createElement('p');"
                 f"{self._handle}.classList.add('{self.role}');"
                 f"{self._handle}.onclick = function() {{ web_bridge.edit_message('{self._handle}'); }};"
@@ -46,15 +47,12 @@ class MessageView(Message):
                 "window.scrollTo(0, document.body.scrollHeight);"
             )
             if not content and role == "assistant":
-                self._js(f"{self._handle}.classList.add('thinking');")
+                self._parent.js(f"{self._handle}.classList.add('thinking');")
         else:
-            self._js(
+            self._parent.js(
                 f"{self._handle} = document.createElement('p');"
                 "window.scrollTo(0, document.body.scrollHeight);"
             )
-
-    def _js(self, code: str):
-        self._page.runJavaScript(code)
 
     def set_content(self, content: str):
         self.content = content
@@ -70,7 +68,7 @@ class MessageView(Message):
 
     def _update_view(self, override: str = ""):
         code = override if override else html(self.content)
-        self._js(
+        self._parent.js(
             f"{self._handle}.classList.remove('thinking');"
             f"{self._handle}.innerHTML = '{code}';"
             "window.scrollTo(0, document.body.scrollHeight);"
@@ -79,40 +77,43 @@ class MessageView(Message):
     def __del__(self):
         if self._handle:  # to suppress this code if necessary
             try:
-                self._js(f"document.body.removeChild({self._handle});")
+                self._parent.js(f"document.body.removeChild({self._handle});")
             except RuntimeError:
                 pass
 
     def mark(self):
-        self._js(f"{self._handle}.classList.add('mark');")
+        self._parent.js(f"{self._handle}.classList.add('mark');")
 
     def unmark(self):
-        self._js(f"{self._handle}.classList.remove('mark');")
+        self._parent.js(f"{self._handle}.classList.remove('mark');")
 
 
 class EditDialog(QtWidgets.QDialog):
+    result: str = ""
+
     def __init__(self, text: str, parent):
         super().__init__(parent)
         self.setWindowTitle("Edit message")
 
-        self.text_edit = QtWidgets.QTextEdit(self)
-        self.text_edit.setAcceptRichText(False)
-        self.text_edit.setPlainText(text)
-        self.text_edit.setWordWrapMode(QtGui.QTextOption.WrapMode.WordWrap)
+        self.text_edit = TextEdit(self)
+        self.text_edit.set_text(text)
+        self.text_edit.sendMessage.connect(self.handle_message)
 
         button_box = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.StandardButton.Ok
             | QtWidgets.QDialogButtonBox.StandardButton.Cancel
         )
-        button_box.accepted.connect(self.accept)
+        button_box.accepted.connect(lambda: self.handle_message(self.text_edit.text()))
         button_box.rejected.connect(self.reject)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(self.text_edit)
         layout.addWidget(button_box)
 
-    def result(self):
-        return self.text_edit.toPlainText()
+    @QtCore.Slot(str)
+    def handle_message(self, text: str):
+        self.result = text
+        self.accept()
 
 
 class WebBridge(QtCore.QObject):
@@ -127,7 +128,7 @@ class WebBridge(QtCore.QObject):
         message = chat_area._messages[idx]
         dialog = EditDialog(message.content, chat_area)
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            message.set_content(dialog.result())
+            message.set_content(dialog.result)
 
 
 class ChatArea(QtWebEngineWidgets.QWebEngineView):
@@ -148,8 +149,11 @@ class ChatArea(QtWebEngineWidgets.QWebEngineView):
         # must be last
         self.clear()
 
+    def js(self, code: str):
+        self.page().runJavaScript(code)
+
     def add(self, role: str, content: str):
-        m = MessageView(self.page(), len(self._messages), role, content)
+        m = MessageView(self, len(self._messages), role, content)
         self._messages.append(m)
         return m
 
@@ -174,45 +178,45 @@ class ChatArea(QtWebEngineWidgets.QWebEngineView):
             web_bridge = channel.objects.web_bridge;
         }});
     </script>
+    <style>
+        p {{
+            min-height: 1em;
+            padding: 5px;
+            border-radius: 5px;
+            width: auto;
+            background-color: #AEAEAE;
+            margin: 3px;
+            font-family: {self._settings.font};
+            font-size: {self._settings.font_size}pt;
+        }}
+        .user {{
+            background-color: {self._settings.user_color};
+            margin-left: 50px;
+        }}
+        .assistant {{
+            background-color: {self._settings.assistant_color};
+            margin-right: 50px;
+        }}
+        .thinking {{
+        animation: pulse 0.5s infinite alternate; /* Apply animation */
+        }}
+        @keyframes pulse {{
+        0% {{
+            background-color: {self._settings.assistant_color}; /* Color at the start */
+        }}
+        100% {{
+            background-color: {self._settings.user_color}; /* Color at the end */
+        }}
+        }}
+        .mark {{
+            border: 1px solid black;
+        }}
+        em {{
+            font-style: italic;
+            color: {self._settings.em_color};
+        }}
+    </style>
 </head>
-<style>
-p {{
-    min-height: 1em;
-    padding: 5px;
-    border-radius: 5px;
-    width: auto;
-    background-color: #AEAEAE;
-    margin: 3px;
-    font-family: {self._settings.font};
-    font-size: {self._settings.font_size}pt;
-}}
-.user {{
-    background-color: {self._settings.user_color};
-    margin-left: 50px;
-}}
-.assistant {{
-    background-color: {self._settings.assistant_color};
-    margin-right: 50px;
-}}
-.thinking {{
-  animation: pulse 0.5s infinite alternate; /* Apply animation */
-}}
-@keyframes pulse {{
-  0% {{
-    background-color: {self._settings.assistant_color}; /* Color at the start */
-  }}
-  100% {{
-    background-color: {self._settings.user_color}; /* Color at the end */
-  }}
-}}
-.mark {{
-    border: 1px solid black;
-}}
-em {{
-    font-style: italic;
-    color: {self._settings.em_color};
-}}
-</style>
 <body>
 </body>
 </html>
@@ -224,31 +228,12 @@ em {{
         self.loadFinished.connect(loop.quit)
         loop.exec()
 
-
-class TextEdit(QtWidgets.QTextEdit):
-    sendMessage = QtCore.Signal(str)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setAcceptRichText(False)
-        self.setPlaceholderText(
-            "Type here and press Enter to send message. Use Shift+Enter to make a newline."
-        )
-
-    def keyPressEvent(self, event: QtGui.QKeyEvent):
-        mod = event.modifiers()
-        if event.key() == QtCore.Qt.Key.Key_Return:
-            if not (mod & QtCore.Qt.KeyboardModifier.ShiftModifier):
-                self.sendMessage.emit(self.text())
-                self.clear()
-                return
-        super().keyPressEvent(event)
-
-    def text(self):
-        return self.toPlainText().strip()
-
-    def set_text(self, text: str):
-        self.setPlainText(text)
+    def reload_style(self, settings: Settings):
+        self._settings = settings
+        messages = [Message(role=m.role, content=m.content) for m in self._messages]
+        self.clear()
+        for m in messages:
+            self.add(m.role, m.content)
 
 
 class InputArea(QtWidgets.QWidget):
@@ -300,6 +285,10 @@ class ChatWidget(QtWidgets.QSplitter):
 
         self._input_area.edit.sendMessage.connect(self.new_user_message)
         self._input_area.summary_button.clicked.connect(self.sendSummaryClick)
+
+    def reload_style(self, settings: Settings):
+        self.setFont(QtGui.QFont(settings.font, settings.font_size))
+        self._chat_area.reload_style(settings)
 
     def clear(self):
         self._chat_area.clear()

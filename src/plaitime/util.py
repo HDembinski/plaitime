@@ -1,4 +1,4 @@
-from . import CHARACTERS_PER_TOKEN, CHARACTER_DIRECTORY
+from . import CHARACTERS_PER_TOKEN, SESSION_DIRECTORY
 from .data_models import Message
 import ollama
 from pydantic import BaseModel
@@ -11,16 +11,18 @@ T = TypeVar("T", bound=BaseModel)
 logger = logging.getLogger(__name__)
 
 
-def get_character_names():
+def get_session_names():
     names = []
-    for fname in CHARACTER_DIRECTORY.glob("*.json"):
+    for fname in SESSION_DIRECTORY.glob("*.json"):
         names.append(fname.stem)
     return names
 
 
-def estimate_num_tokens(messages: list[Message], prompt: str = "") -> int:
+def estimate_num_tokens(messages: list[Message], *args: str) -> int:
     # estimate number of token
-    num_char = len(prompt)
+    num_char = 0
+    for arg in args:
+        num_char += len(arg)
     for m in messages:
         num_char += len(m.content)
     return int(num_char / CHARACTERS_PER_TOKEN)

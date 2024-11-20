@@ -12,7 +12,7 @@ FontString = Annotated[str, "font"]
 ColorString = Annotated[str, "color"]
 
 
-class Character(BaseModel):
+class Session(BaseModel):
     name: ShortString = "Assistant"
     prompt: LongString = ""
     model: ModelString = "llama3.2:latest"
@@ -25,13 +25,24 @@ class Message(BaseModel):
     content: str
 
 
+class Character(BaseModel):
+    name: str
+    eyes: str
+    hair: str
+    clothing: str
+    weapons: str
+    abilities: str
+    notes: str
+
+
 class Memory(BaseModel):
     messages: list[Message] = []
-    memories: list[str] = []
+    characters: list[Character] = []
+    story: str = ""
 
 
 class Settings(BaseModel):
-    character: Annotated[str, "noconfig"] = ""
+    session: Annotated[str, "noconfig"] = ""
     geometry: Annotated[tuple[int, int, int, int], "noconfig"] = (100, 100, 600, 600)
     font: FontString = "Arial"
     font_size: Annotated[int, Interval(ge=1, le=100)] = 11

@@ -1,8 +1,11 @@
 from PySide6 import QtWidgets, QtCore
-from .util import get_character_names
+from .util import get_session_names
 
 
-class CharacterBar(QtWidgets.QWidget):
+class SessionBar(QtWidgets.QWidget):
+    sessionChanged = QtCore.Signal(str)
+    context_size: int = 0
+
     def __init__(self, parent=None):
         super().__init__(parent)
 
@@ -12,37 +15,34 @@ class CharacterBar(QtWidgets.QWidget):
         )
         self.setSizePolicy(size_policy)
 
-        self.character_selector = QtWidgets.QComboBox(self)
-        self.character_selector.setSizePolicy(size_policy)
-        self.character_selector.setMinimumWidth(200)
+        self.session = QtWidgets.QComboBox(self)
+        self.session.setSizePolicy(size_policy)
+        self.session.setMinimumWidth(200)
+        self.session.currentTextChanged.connect(self.sessionChanged)
+
         self.clipboard_button = QtWidgets.QPushButton("Clipboard")
         self.num_token = QtWidgets.QLabel(self)
 
-        layout = QtWidgets.QHBoxLayout()
-        layout.addWidget(self.character_selector)
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.addWidget(self.session)
         layout.addWidget(self.clipboard_button)
         layout.addWidget(self.num_token)
         layout.setContentsMargins(0, 3, 5, 0)
-        self.setLayout(layout)
 
-        self.context_size = 0
-
-    def set_character_manually(self, name: str):
-        names = get_character_names()
+    def set_session_manually(self, name: str):
+        names = get_session_names()
         if name not in names:
             names.append(name)
         names.sort()
-        self.character_selector.blockSignals(True)
-        self.character_selector.clear()
-        self.character_selector.addItems(names)
-        self.character_selector.setCurrentText(name)
-        self.character_selector.blockSignals(False)
+        self.session.blockSignals(True)
+        self.session.clear()
+        self.session.addItems(names)
+        self.session.setCurrentText(name)
+        self.session.blockSignals(False)
 
-    @QtCore.Slot(int)
     def set_context_size(self, n: int):
         self.context_size = n
 
-    @QtCore.Slot(int)
     def set_num_token(self, num: int):
         if num < 0:
             text = ""

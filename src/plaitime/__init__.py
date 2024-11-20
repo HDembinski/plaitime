@@ -4,8 +4,8 @@ BASE_DIRECTORY = Path.home() / ".plaitime"
 BASE_DIRECTORY.mkdir(exist_ok=True)
 
 SETTINGS_FILE_NAME = BASE_DIRECTORY / "settings.json"
-CHARACTER_DIRECTORY = BASE_DIRECTORY / "characters"
-CHARACTER_DIRECTORY.mkdir(exist_ok=True)
+SESSION_DIRECTORY = BASE_DIRECTORY / "sessions"
+SESSION_DIRECTORY.mkdir(exist_ok=True)
 MEMORY_DIRECTORY = BASE_DIRECTORY / "memories"
 MEMORY_DIRECTORY.mkdir(exist_ok=True)
 
