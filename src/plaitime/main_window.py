@@ -252,9 +252,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # that the LLM can see, but keep the system prompt at all times
         window = self.context_window(prompt)
         assert len(window) > 0
-        self.chat_widget.messages[-len(window)].mark()
-        window.append(Message(role="system", content=prompt))
-        window.reverse()
+        self.chat_widget.messages[-(len(window) - 1)].mark()
 
         self.cancel_generator(wait=True)
         self.generator = Chat(
@@ -280,9 +278,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.generator = None
         self.session_bar.set_num_token(self.estimate_num_tokens())
 
-    def context_window(self, prefix: str):
+    def context_window(self, prompt: str = ""):
         window = []
-        num_token = len(prefix) / CHARACTERS_PER_TOKEN
+        num_token = len(prompt) / CHARACTERS_PER_TOKEN
         for m in reversed(self.chat_widget.messages):
             window.append(m)
             num_token += len(m.content) / CHARACTERS_PER_TOKEN
@@ -290,6 +288,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 1 - self.settings.context_margin_fraction / 100
             ):
                 break
+        if prompt:
+            window.append(Message(role="system", content=prompt))
         window.reverse()
         return window
 
@@ -304,9 +304,7 @@ class MainWindow(QtWidgets.QMainWindow):
         story = self.story_widget.text()
         dialog = "\n\n".join(
             f"{m.role.capitalize()}:\n{m.content}"
-            for m in (
-                self.context_window(story) if window else self.chat_widget.messages
-            )
+            for m in (self.context_window() if window else self.chat_widget.messages)
             if m.content
         )
         return "\n\n".join(x for x in (world, story, dialog) if x)
