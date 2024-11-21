@@ -3,19 +3,18 @@ import logging
 import ollama
 from ollama import ResponseError
 from PySide6 import QtCore, QtGui, QtWidgets
+import json
 
 from . import (
     SETTINGS_FILE_NAME,
     SESSION_DIRECTORY,
     MEMORY_DIRECTORY,
-    STORY_EXTRACTION_PROMPT,
-    CONTEXT_MARGIN_FRACTION,
     CHARACTERS_PER_TOKEN,
 )
 from .session_bar import SessionBar
 from .config_dialog import ConfigDialog
 from .data_models import Settings, Session, Memory, Message
-from .generator import Chat, Generate, GeneratorThread
+from .generator import Chat, Generate, GenerateJson
 from .chat_widget import ChatWidget
 from .util import estimate_num_tokens, get_session_names
 from .io import load, save, lock_and_load, save_and_release, rename
@@ -24,13 +23,43 @@ from .text_edit import BasicTextEdit
 logger = logging.getLogger(__name__)
 
 
+class TextEditor(QtWidgets.QWidget):
+    summaryClicked = QtCore.Signal()
+
+    def __init__(self, settings: Settings, parent=None):
+        super().__init__(parent)
+        self.edit = BasicTextEdit(self)
+        self.edit.setFont(settings.qfont())
+        self.button = QtWidgets.QPushButton("Generate", self)
+        self.button.clicked.connect(self.summaryClicked)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(self.edit)
+        layout.addWidget(self.button)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(3)
+
+    def text(self):
+        return self.edit.text()
+
+    def set_text(self, text: str):
+        self.edit.set_text(text)
+
+    def add_chunk(self, chunk: str):
+        self.edit.add_chunk(chunk)
+
+    def move_cursor_to_end(self):
+        self.edit.move_cursor_to_end()
+
+    def setEnabled(self, on: bool):
+        self.button.setEnabled(on)
+        self.edit.setReadOnly(not on)
+
+
 class MainWindow(QtWidgets.QMainWindow):
     settings: Settings
     session: Session
-    generator: GeneratorThread | None
+    generator: Chat | Generate | None
     cancel_mode: str
-    chat_widget: ChatWidget
-    session_bar: SessionBar
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -62,12 +91,18 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.chat_widget = ChatWidget(self.settings, self)
         self.chat_widget.sendMessage.connect(self.generate_response)
-        self.chat_widget.sendSummaryClick.connect(self.generate_summary)
-        self.story_editor = BasicTextEdit(self)
+        self.story_widget = TextEditor(self.settings, self)
+        self.story_widget.summaryClicked.connect(self.generate_story)
+        self.characters_widget = TextEditor(self.settings, self)
+        # self.characters_widget.summaryClicked.connect(self.generate_character)
+        self.world_widget = TextEditor(self.settings, self)
+        self.world_widget.summaryClicked.connect(self.generate_world)
 
         tab_widget = QtWidgets.QTabWidget(self)
         tab_widget.addTab(self.chat_widget, "Main")
-        tab_widget.addTab(self.story_editor, "Story")
+        tab_widget.addTab(self.story_widget, "Story")
+        tab_widget.addTab(self.characters_widget, "Characters")
+        tab_widget.addTab(self.world_widget, "World")
         self.setCentralWidget(tab_widget)
 
         # Must be at the end
@@ -95,12 +130,14 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             memory = Memory()
         self.chat_widget.load_messages(memory.messages)
-        self.story_editor.set_text(memory.story)
-        self.story_editor.setFont(
-            QtGui.QFont(self.settings.font, self.settings.font_size)
-        )
+        self.story_widget.set_text(memory.story)
+        self.story_widget.setFont(self.settings.qfont())
+        self.characters_widget.set_text(memory.characters2)
+        self.characters_widget.setFont(self.settings.qfont())
+        self.world_widget.set_text(memory.world)
+        self.world_widget.setFont(self.settings.qfont())
         self.session_bar.set_num_token(self.estimate_num_tokens())
-        self.warmup_model()
+        # self.warmup_model()
 
     def save_session(self):
         c = self.session
@@ -112,10 +149,12 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
         memory = Memory()
-        memory.story = self.story_editor.text()
+        memory.story = self.story_widget.text()
+        memory.world = self.world_widget.text()
+        memory.characters2 = self.characters_widget.text()
 
         if c.save_conversation:
-            widgets = self.chat_widget.get_messages()
+            widgets = self.chat_widget.messages
             memory.messages = [Message(role=w.role, content=w.content) for w in widgets]
             user_text = self.chat_widget.get_user_text()
             if user_text:
@@ -150,16 +189,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self.settings = dialog.result()
             # colors changed, we need to reload the web view
             self.chat_widget.reload_style(self.settings)
-            self.story_editor.setFont(
-                QtGui.QFont(self.settings.font, self.settings.font_size)
-            )
+            self.story_widget.setFont(self.settings.qfont())
 
     @QtCore.Slot()
     def configure_session(self, new_session: bool = False):
         if new_session:
             self.session = Session()
             self.chat_widget.load_messages([])
-            self.story_editor.set_text("")
+            self.story_widget.set_text("")
         dialog = ConfigDialog(self.session, parent=self)
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             session: Session = dialog.result()
@@ -169,7 +206,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.session_bar.set_session_manually(self.session.name)
             self.update_context_size()
             self.session_bar.set_num_token(self.estimate_num_tokens())
-            self.warmup_model()
+            # self.warmup_model()
 
     @QtCore.Slot()
     def new_session(self):
@@ -206,16 +243,6 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.cancel_mode == "rewind":
             self.chat_widget.rewind(partial)
 
-    @QtCore.Slot()
-    def generator_finished(self):
-        # trim excess whitespace
-        messages = self.chat_widget.get_messages()
-        messages[-1].set_content(messages[-1].content.strip())
-
-        self.chat_widget.enable()
-        self.generator = None
-        self.session_bar.set_num_token(self.estimate_num_tokens())
-
     def generate_response(self):
         self.chat_widget.disable()
         self.save_session()
@@ -223,46 +250,66 @@ class MainWindow(QtWidgets.QMainWindow):
         prompt = self.enhanced_prompt()
         # enable endless chatting by clipping the part of the conversation
         # that the LLM can see, but keep the system prompt at all times
-        window = []
-        num_token = len(prompt) / CHARACTERS_PER_TOKEN
-        for w in reversed(self.chat_widget.get_messages()):
-            w.unmark()
-            window.append({"role": w.role, "content": w.content})
-            num_token += len(w.content) / CHARACTERS_PER_TOKEN
-            if num_token > self.session_bar.context_size * (
-                1 - CONTEXT_MARGIN_FRACTION
-            ):
-                break
+        window = self.context_window(prompt)
         assert len(window) > 0
-        assert w.content == window[-1]["content"]
-        w.mark()
-        window.append({"role": "system", "content": prompt})
+        self.chat_widget.messages[-len(window)].mark()
+        window.append(Message(role="system", content=prompt))
         window.reverse()
 
         self.cancel_generator(wait=True)
         self.generator = Chat(
-            self.session.model, window, temperature=self.session.temperature
+            self.session.model,
+            window,
+            self.settings.llm_timeout,
+            temperature=self.session.temperature,
         )
         mw = self.chat_widget.add("assistant", "")
         self.generator.nextChunk.connect(mw.add_chunk)
         self.generator.error.connect(self.show_error_message)
-        self.generator.finished.connect(self.generator_finished)
+        self.generator.finished.connect(self.response_finished)
         self.cancel_mode = "rewind"
         self.generator.start()
 
+    @QtCore.Slot()
+    def response_finished(self):
+        # trim excess whitespace
+        messages = self.chat_widget.messages
+        messages[-1].set_content(messages[-1].content.strip())
+
+        self.chat_widget.enable()
+        self.generator = None
+        self.session_bar.set_num_token(self.estimate_num_tokens())
+
+    def context_window(self, prefix: str):
+        window = []
+        num_token = len(prefix) / CHARACTERS_PER_TOKEN
+        for m in reversed(self.chat_widget.messages):
+            window.append(m)
+            num_token += len(m.content) / CHARACTERS_PER_TOKEN
+            if num_token > self.session_bar.context_size * (
+                1 - self.settings.context_margin_fraction / 100
+            ):
+                break
+        window.reverse()
+        return window
+
     def enhanced_prompt(self):
         prompt = self.session.prompt
-        story = self.story_editor.text()
-        if story:
-            prompt += f"\n\nStory:\n\n{story}"
-        return prompt
+        world = self.world_widget.text()
+        story = self.story_widget.text()
+        return "\n\n".join(x for x in (prompt, world, story) if x)
 
-    def dialog_text(self):
-        messages = self.chat_widget.get_messages()
-        text = f"{self.enhanced_prompt()}\n\n" + "\n\n".join(
-            f"{m.role.capitalize()}:\n{m.content}" for m in messages
+    def dialog_text(self, window: bool = False):
+        world = self.world_widget.text()
+        story = self.story_widget.text()
+        dialog = "\n\n".join(
+            f"{m.role.capitalize()}:\n{m.content}"
+            for m in (
+                self.context_window(story) if window else self.chat_widget.messages
+            )
+            if m.content
         )
-        return text
+        return "\n\n".join(x for x in (world, story, dialog) if x)
 
     @QtCore.Slot()
     def copy_to_clipboard(self):
@@ -270,20 +317,72 @@ class MainWindow(QtWidgets.QMainWindow):
         clipboard.setText(self.dialog_text())
 
     @QtCore.Slot()
-    def generate_summary(self):
-        prompt = STORY_EXTRACTION_PROMPT.format(self.dialog_text())
+    def generate_story(self):
+        prompt = self.settings.story_prompt.format(self.dialog_text(window=True))
 
         self.cancel_generator(wait=True)
         self.cancel_mode = "cancel"
         self.generator = Generate(
-            self.session.model,
+            self.session.extraction_model,
             prompt=prompt,
-            temperature=0.1,
+            keep_alive=self.settings.llm_timeout,
+            temperature=self.session.extraction_temperature,
         )
-        self.generator.nextChunk.connect(self.chat_widget.add_user_text)
+        self.story_widget.move_cursor_to_end()
+        self.story_widget.setEnabled(False)
+        self.generator.nextChunk.connect(self.story_widget.add_chunk)
         self.generator.error.connect(self.show_error_message)
-        self.generator.finished.connect(self.generate_summary_finished)
+        self.generator.finished.connect(self.generate_finished)
         self.generator.start()
+
+    @QtCore.Slot()
+    def generate_world(self):
+        prompt = self.settings.world_prompt.format(self.dialog_text(window=True))
+
+        self.cancel_generator(wait=True)
+        self.cancel_mode = "cancel"
+        self.generator = Generate(
+            self.session.extraction_model,
+            prompt=prompt,
+            keep_alive=self.settings.llm_timeout,
+            temperature=self.session.extraction_temperature,
+        )
+        self.world_widget.move_cursor_to_end()
+        self.world_widget.setEnabled(False)
+        self.generator.nextChunk.connect(self.world_widget.add_chunk)
+        self.generator.error.connect(self.show_error_message)
+        self.generator.finished.connect(self.generate_finished)
+        self.generator.start()
+
+    @QtCore.Slot()
+    def generate_characters(self):
+        prompt = self.settings.characters_prompt.format(self.dialog_text(window=True))
+
+        self.cancel_generator(wait=True)
+        self.cancel_mode = "cancel"
+        self.generator = GenerateJson(
+            self.session.extraction_model,
+            prompt=prompt,
+            keep_alive=self.settings.llm_timeout,
+            temperature=self.session.extraction_temperature,
+        )
+        self.characters_widget.move_cursor_to_end()
+        self.characters_widget.setEnabled(False)
+        self.generator.error.connect(self.show_error_message)
+        self.generator.finished.connect(self.generate_json_finished)
+        self.generator.start()
+
+    @QtCore.Slot()
+    def generate_finished(self):
+        self.generator = None
+        self.story_widget.setEnabled(True)
+        self.world_widget.setEnabled(True)
+
+    @QtCore.Slot()
+    def generate_json_finished(self):
+        self.generator = None
+        # TODO handle JSON here
+        self.characters_widget.setEnabled(True)
 
     @QtCore.Slot(str)
     def show_error_message(self, message: str):
@@ -291,11 +390,6 @@ class MainWindow(QtWidgets.QMainWindow):
         msg.setWindowTitle("Error")
         msg.setText(message)
         msg.exec()
-
-    @QtCore.Slot()
-    def generate_summary_finished(self):
-        self.generator = None
-        self.chat_widget.enable()
 
     def cancel_generator(self, *, wait=False):
         self.cancel_mode = "rewind"
@@ -321,7 +415,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.generator and self.generator.isRunning():
             return
 
-        self.generator = Generate(self.session.model, "")
+        self.generator = Generate(self.session.model, "", self.settings.llm_timeout)
 
         @QtCore.Slot()
         def finished():
@@ -331,9 +425,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.generator.start()
 
     def estimate_num_tokens(self):
-        return estimate_num_tokens(
-            self.chat_widget.get_messages(), self.enhanced_prompt()
-        )
+        return estimate_num_tokens(self.chat_widget.messages, self.enhanced_prompt())
 
 
 def get_context_size(model):

@@ -13,6 +13,22 @@ class BasicTextEdit(QtWidgets.QTextEdit):
     def set_text(self, text: str):
         self.setPlainText(text.strip())
 
+    def add_chunk(self, chunk: str):
+        cursor = self.textCursor()
+        cursor.insertText(chunk)
+        self.setTextCursor(cursor)
+
+    def setEnabled(self, yes):
+        super().setEnabled(yes)
+        if yes:
+            self.setFocus()
+
+    def move_cursor_to_end(self):
+        cursor = self.textCursor()
+        cursor.movePosition(QtGui.QTextCursor.MoveOperation.End)
+        cursor.insertText("\n")
+        self.setTextCursor(cursor)
+
 
 class TextEdit(BasicTextEdit):
     sendMessage = QtCore.Signal(str)

@@ -4,7 +4,6 @@ from PySide6 import (
     QtCore,
     QtGui,
     QtWebEngineWidgets,
-    QtWebEngineCore,
     QtWebChannel,
 )
 from .util import remove_last_sentence
@@ -74,18 +73,19 @@ class MessageView(Message):
             "window.scrollTo(0, document.body.scrollHeight);"
         )
 
+    def mark(self):
+        self._parent.js(
+            "elements = document.getElementsByClassName('mark');"
+            "for (let i = 0; i < elements.length; i++) elements[i].classList.remove('mark');"
+            f"{self._handle}.classList.add('mark');"
+        )
+
     def __del__(self):
         if self._handle:  # to suppress this code if necessary
             try:
                 self._parent.js(f"document.body.removeChild({self._handle});")
             except RuntimeError:
                 pass
-
-    def mark(self):
-        self._parent.js(f"{self._handle}.classList.add('mark');")
-
-    def unmark(self):
-        self._parent.js(f"{self._handle}.classList.remove('mark');")
 
 
 class EditDialog(QtWidgets.QDialog):
@@ -125,7 +125,7 @@ class WebBridge(QtCore.QObject):
         chat_area: ChatArea = self.parent()
         idx = int(paragraph_id[2:])
         logger.info(f"Edit message {idx}")
-        message = chat_area._messages[idx]
+        message = chat_area.messages[idx]
         dialog = EditDialog(message.content, chat_area)
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             message.set_content(dialog.result)
@@ -133,13 +133,13 @@ class WebBridge(QtCore.QObject):
 
 class ChatArea(QtWebEngineWidgets.QWebEngineView):
     _settings: Settings
-    _messages: list[MessageView]
+    messages: list[MessageView]
 
     def __init__(self, settings: Settings, parent=None):
         super().__init__(parent)
         self.setContextMenuPolicy(QtGui.Qt.ContextMenuPolicy.NoContextMenu)
         self._settings = settings
-        self._messages = []
+        self.messages = []
 
         # Web channel setup
         channel = QtWebChannel.QWebChannel(self)
@@ -153,18 +153,15 @@ class ChatArea(QtWebEngineWidgets.QWebEngineView):
         self.page().runJavaScript(code)
 
     def add(self, role: str, content: str):
-        m = MessageView(self, len(self._messages), role, content)
-        self._messages.append(m)
+        m = MessageView(self, len(self.messages), role, content)
+        self.messages.append(m)
         return m
-
-    def get_messages(self) -> list[MessageView]:
-        return self._messages
 
     def clear(self):
         # prevent MessageView.__del__
-        for m in self._messages:
+        for m in self.messages:
             m._handle = ""
-        self._messages = []
+        self.messages = []
         self.setHtml(f"""
 <!DOCTYPE html>
 <html lang="en">
@@ -230,64 +227,28 @@ class ChatArea(QtWebEngineWidgets.QWebEngineView):
 
     def reload_style(self, settings: Settings):
         self._settings = settings
-        messages = [Message(role=m.role, content=m.content) for m in self._messages]
+        messages = [Message(role=m.role, content=m.content) for m in self.messages]
         self.clear()
         for m in messages:
             self.add(m.role, m.content)
 
 
-class InputArea(QtWidgets.QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setMinimumSize(0, 100)
-
-        self.edit = TextEdit(self)
-        self.summary_button = QtWidgets.QPushButton("Summary", self)
-
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.addWidget(self.edit)
-        layout.addWidget(self.summary_button)
-        layout.setSpacing(1)
-        layout.setContentsMargins(3, 0, 3, 0)
-
-    def setEnabled(self, yes):
-        super().setEnabled(yes)
-        if yes:
-            self.edit.setFocus()
-
-    def clear(self):
-        self.edit.clear()
-
-    def text(self):
-        return self.edit.text()
-
-    def set_text(self, text: str):
-        return self.edit.set_text(text)
-
-    def add_user_text(self, chunk: str):
-        cursor = self.edit.textCursor()
-        cursor.insertText(chunk)
-        self.edit.setTextCursor(cursor)
-
-
 class ChatWidget(QtWidgets.QSplitter):
     sendMessage = QtCore.Signal()
-    sendSummaryClick = QtCore.Signal()
 
     def __init__(self, settings: Settings, parent):
         super().__init__(QtCore.Qt.Orientation.Vertical, parent)
-        self.setFont(QtGui.QFont(settings.font, settings.font_size))
+        self.setFont(settings.qfont())
         self._chat_area = ChatArea(settings, self)
-        self._input_area = InputArea(self)
+        self._input_area = TextEdit(self)
         self.addWidget(self._chat_area)
         self.addWidget(self._input_area)
         self.setSizes([300, 100])
 
-        self._input_area.edit.sendMessage.connect(self.new_user_message)
-        self._input_area.summary_button.clicked.connect(self.sendSummaryClick)
+        self._input_area.sendMessage.connect(self.new_user_message)
 
     def reload_style(self, settings: Settings):
-        self.setFont(QtGui.QFont(settings.font, settings.font_size))
+        self.setFont(settings.qfont())
         self._chat_area.reload_style(settings)
 
     def clear(self):
@@ -314,8 +275,9 @@ class ChatWidget(QtWidgets.QSplitter):
     def add(self, role: str, content: str) -> MessageView:
         return self._chat_area.add(role, content)
 
-    def get_messages(self) -> list[MessageView]:
-        return self._chat_area.get_messages()
+    @property
+    def messages(self) -> list[MessageView]:
+        return self._chat_area.messages
 
     def load_messages(self, messages: list[Message]):
         self.setUpdatesEnabled(False)
@@ -328,7 +290,7 @@ class ChatWidget(QtWidgets.QSplitter):
         self.setUpdatesEnabled(True)
 
     def rewind(self, partial: bool):
-        messages = self.get_messages()
+        messages = self.messages
         if len(messages) < 2:
             return
 
@@ -343,10 +305,6 @@ class ChatWidget(QtWidgets.QSplitter):
         user_message = messages.pop()
         assert user_message.role == "user"
         self.set_input_text(user_message.content)
-
-    @QtCore.Slot(str)
-    def add_user_text(self, chunk: str):
-        self._input_area.add_user_text(chunk)
 
     def enable(self):
         self._input_area.setEnabled(True)
