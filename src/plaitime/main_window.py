@@ -3,7 +3,6 @@ import logging
 import ollama
 from ollama import ResponseError
 from PySide6 import QtCore, QtGui, QtWidgets
-import json
 
 from . import (
     SETTINGS_FILE_NAME,
