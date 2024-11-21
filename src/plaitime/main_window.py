@@ -156,6 +156,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @QtCore.Slot()
     def configure_session(self, new_session: bool = False):
+        if new_session:
+            self.session = Session()
+            self.chat_widget.load_messages([])
+            self.story_editor.set_text("")
         dialog = ConfigDialog(self.session, parent=self)
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             session: Session = dialog.result()
@@ -170,9 +174,6 @@ class MainWindow(QtWidgets.QMainWindow):
     @QtCore.Slot()
     def new_session(self):
         self.save_session()
-        # this is important, otherwise the old session is deleted in configure_session
-        self.session = Session()
-        self.chat_widget.load_messages([])
         self.configure_session(new_session=True)
 
     @QtCore.Slot()
