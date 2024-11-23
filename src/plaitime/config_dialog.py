@@ -1,7 +1,6 @@
 from PySide6 import QtWidgets, QtGui
 import ollama
 from .data_models import (
-    ShortString,
     LongString,
     ModelString,
     FontString,
@@ -75,17 +74,15 @@ class ConfigDialog(QtWidgets.QDialog):
 
 
 def generate_widget(
-    field_type: Annotated[str | int | float, ...] | bool,
+    field_type: Annotated[str | int | float, ...] | str | bool,
     value: str | int | float | bool,
 ):
     if field_type is bool:
         w = QtWidgets.QCheckBox()
         w.setChecked(value)
-    elif field_type is ShortString:
-        w = QtWidgets.QLineEdit()
-        w.setText(value)
     elif field_type is LongString:
         w = QtWidgets.QTextEdit()
+        w.setAcceptRichText(False)
         w.setPlainText(value)
     elif field_type is ModelString:
         models = []
@@ -99,6 +96,9 @@ def generate_widget(
     elif field_type is FontString:
         w = QtWidgets.QFontComboBox()
         w.setCurrentFont(QtGui.QFont(value))
+    elif field_type is str:
+        w = QtWidgets.QLineEdit()
+        w.setText(value)
     else:
         # must be Annotated[...] when arriving here
         assert hasattr(field_type, "__metadata__")
@@ -128,7 +128,7 @@ def get_widget_value(
     if isinstance(w, QtWidgets.QTextEdit):
         return w.toPlainText()
     if isinstance(w, QtWidgets.QLineEdit):
-        return w.text()
+        return w.text().strip()
     if isinstance(w, QtWidgets.QComboBox):
         return w.currentText()
     if isinstance(w, ColorButton):

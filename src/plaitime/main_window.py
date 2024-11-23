@@ -298,9 +298,14 @@ class MainWindow(QtWidgets.QMainWindow):
         story = self.story_widget.text()
         return "\n\n".join(x for x in (prompt, world, story) if x)
 
-    def dialog_text(self, window: bool = False):
-        world = self.world_widget.text()
-        story = self.story_widget.text()
+    def dialog_text(
+        self,
+        window: bool = False,
+        include_world: bool = True,
+        include_story: bool = True,
+    ):
+        world = self.world_widget.text() if include_world else ""
+        story = self.story_widget.text() if include_story else ""
         dialog = "\n\n".join(
             f"{m.role.capitalize()}:\n{m.content}"
             for m in (self.context_window() if window else self.chat_widget.messages)
@@ -315,7 +320,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @QtCore.Slot()
     def generate_story(self):
-        prompt = self.settings.story_prompt.format(self.dialog_text(window=True))
+        prompt = self.settings.story_prompt.format(
+            dialog=self.dialog_text(
+                window=True, include_world=True, include_story=False
+            ),
+            story=self.story_widget.text(),
+        )
+        logger.debug(f"generate_story\n{prompt}")
 
         self.cancel_generator(wait=True)
         self.cancel_mode = "cancel"

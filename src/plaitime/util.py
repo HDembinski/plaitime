@@ -47,6 +47,7 @@ def generate_json_response(
 
 def remove_last_sentence(s: str) -> str:
     index = len(s)
+    trailing = ""
     if index > 0:
         for _ in range(10):
             index = (
@@ -57,8 +58,22 @@ def remove_last_sentence(s: str) -> str:
                 )
                 + 1
             )
-            if not re.match(r"^[\s\.]+$", s[index:]):
+            if not re.match(r"^[\s\"\*'\.\(\)]+$", s[index:]):
                 break
             if index == 0:
                 break
-    return s[:index].rstrip()
+        removed = s[index:]
+        trail = []
+        for c in r"'\"*":
+            if removed.count(c) % 2 == 1:
+                trail.append((removed.index(c), c))
+        trailing = "".join(x[1] for x in sorted(trail))
+        if ")" in removed and "(" not in removed:
+            trailing += ")"
+    return s[:index].rstrip() + trailing
+
+
+def shorten_string(s: str, maxlen: int = 1000):
+    if len(s) > maxlen:
+        return f"{s[:497]} [...] {s[504:]}"
+    return s

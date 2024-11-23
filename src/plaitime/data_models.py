@@ -4,7 +4,6 @@ from annotated_types import Interval
 from PySide6 import QtGui
 
 # Metadata tags
-ShortString = Annotated[str, "short"]
 LongString = Annotated[str, "long"]
 ModelString = Annotated[str, "model"]
 FontString = Annotated[str, "font"]
@@ -12,7 +11,7 @@ ColorString = Annotated[str, "color"]
 
 
 class Session(BaseModel):
-    name: ShortString = "Assistant"
+    name: str = "Assistant"
     prompt: LongString = ""
     model: ModelString = "llama3.2:latest"
     temperature: Annotated[float, Interval(ge=0, le=2)] = 0.7
@@ -33,17 +32,17 @@ class Character(BaseModel):
     age: str = ""
     clothing: str = ""
     occupation: str = ""
-    weapons: str = ""
-    abilities: str = ""
-    notes: str = ""
+    weapons: LongString = ""
+    abilities: LongString = ""
+    notes: LongString = ""
 
 
 class Memory(BaseModel):
     messages: list[Message] = []
     characters: list[Character] = []
-    story: str = ""
-    world: str = ""
-    characters2: str = ""
+    story: LongString = ""
+    world: LongString = ""
+    characters2: LongString = ""
 
 
 class Settings(BaseModel):
@@ -54,18 +53,24 @@ class Settings(BaseModel):
     user_color: ColorString = "#f8f8f8"
     assistant_color: ColorString = "#e6f5ff"
     em_color: ColorString = "#034f84"
-    llm_timeout: ShortString = "1h"
+    llm_timeout: str = "1h"
     context_margin_fraction: Annotated[int, Interval(ge=0, le=100)] = 15
-    story_prompt: LongString = """Analyze the text within `<text>` tags and extract a story summary.
+    story_prompt: LongString = """Analyze the text within <text> tags and continue a story summary further below.
 
 <text>
-{0}
+{dialog}
 </text>
 
 # Task Requirements
 
 Extract essential details from the provided narrative, focusing on long-term significance rather than transient information.
-Give equal attention to the entire text, not just the last part. Only return the summary.
+Give equal attention to the entire text, not just the last part.
+
+Continue the summary that is given below. Only return the new paragraphs that extend the summary and nothing else.
+
+# Story summary
+
+{story}
 """
 
     characters_prompt: LongString = """Analyze the text within `<text>` tags and extract key information from the story.

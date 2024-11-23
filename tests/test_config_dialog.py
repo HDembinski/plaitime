@@ -6,7 +6,7 @@ from PySide6 import QtWidgets
 app = QtWidgets.QApplication([])
 
 
-@pytest.mark.parametrize("model", (Character(), Settings()))
+@pytest.mark.parametrize("model", (Character(name="character"), Settings()))
 def test_config_dialog(model):
     c = ConfigDialog(model)
     assert c.result() == model
