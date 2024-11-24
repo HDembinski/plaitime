@@ -113,7 +113,6 @@ class MainWindow(QtWidgets.QMainWindow):
         # self.warmup_model()
 
     def save_session(self):
-        return
         c = self.session
         logger.info(f"saving session {c.name!r}")
         try:
@@ -125,7 +124,7 @@ class MainWindow(QtWidgets.QMainWindow):
         memory = Memory()
         memory.story = self.story_widget.text()
         memory.world = self.world_widget.text()
-        memory.characters2 = self.character_widget.text()
+        memory.characters = self.character_widget.characters
 
         if c.save_conversation:
             widgets = self.chat_widget.messages
@@ -365,7 +364,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @QtCore.Slot()
     def generate_characters_finished(self):
-        self.character_widget.integrate(self.generator.result)
+        self.character_widget.integrate(self.generator.result.characters)
         self.generator = None
         self.character_widget.setEnabled(True)
 

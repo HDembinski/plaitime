@@ -107,7 +107,7 @@ class GenerateData(Generate):
         retries: int = 5,
         **options: dict[str, str | int | float],
     ):
-        super().__init__(model, prompt, keep_alive, options)
+        super().__init__(model, prompt, keep_alive, **options)
         self.data_model = data_model
         self.retries = retries
 
@@ -118,9 +118,12 @@ class GenerateData(Generate):
                 response += chunk
                 self.nextChunk.emit(chunk)
             logger.info(f"Raw response (trial={trial}):\n{response}")
+            if self.interrupt:
+                break
             # clip comments before or after the json
             try:
                 clipped = response[response.index("{") : response.rindex("}") + 1]
                 self.result = self.data_model.model_validate_json(clipped)
+                return
             except Exception as e:
                 logger.warning("JSON parsing failed (trial={trial}):", e)

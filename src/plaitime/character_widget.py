@@ -156,6 +156,8 @@ class CharacterWidget(QtWidgets.QWidget):
                         assert new_val == ""
                 self.characters[i] = old
 
+        self.model.layoutChanged.emit()
+
     @property
     def characters(self) -> list[Character]:
         return self.model.characters
@@ -163,6 +165,9 @@ class CharacterWidget(QtWidgets.QWidget):
     @characters.setter
     def characters(self, value: list[Character]):
         self.model.characters = value
+
+    def add_chunk(self, chunk: str):
+        print(chunk, end="")
 
 
 if __name__ == "__main__":
