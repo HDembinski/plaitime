@@ -33,6 +33,7 @@ class Model(QtCore.QAbstractListModel):
     <tr><th>Eyes</th> <td>{character.eyes}</td></tr>
     <tr><th>Hair</th> <td>{character.hair}</td></tr>
     <tr><th>Age</th> <td>{character.age}</td></tr>
+    <tr><th>Appearance</th> <td>{character.appearance}</td></tr>
     <tr><th>Clothing</th> <td>{character.clothing}</td></tr>
     <tr><th>Occupation</th> <td>{character.occupation}</td></tr>
     <tr><th>Weapons</th> <td>{character.weapons.replace("\n", "<br/>")}</td></tr>

@@ -9,6 +9,9 @@ from . import (
     SESSION_DIRECTORY,
     MEMORY_DIRECTORY,
     CHARACTERS_PER_TOKEN,
+    STORY_PROMPT,
+    CHARACTERS_PROMPT,
+    WORLD_PROMPT,
 )
 from .session_bar import SessionBar
 from .config_dialog import ConfigDialog
@@ -299,7 +302,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @QtCore.Slot()
     def generate_story(self):
-        prompt = self.settings.story_prompt.format(
+        prompt = STORY_PROMPT.format(
             dialog=self.dialog_text(
                 window=True, include_world=True, include_story=False
             ),
@@ -324,7 +327,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @QtCore.Slot()
     def generate_world(self):
-        prompt = self.settings.world_prompt.format(dialog=self.dialog_text(window=True))
+        prompt = WORLD_PROMPT.format(dialog=self.dialog_text(window=True))
 
         self.cancel_generator(wait=True)
         self.cancel_mode = "cancel"
@@ -343,9 +346,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @QtCore.Slot()
     def generate_characters(self):
-        prompt = self.settings.characters_prompt.format(
-            dialog=self.dialog_text(window=True)
-        )
+        prompt = CHARACTERS_PROMPT.format(dialog=self.dialog_text(window=True))
 
         self.cancel_generator(wait=True)
         self.cancel_mode = "cancel"
