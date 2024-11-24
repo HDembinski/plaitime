@@ -28,23 +28,6 @@ def estimate_num_tokens(messages: list[Message], *args: str) -> int:
     return int(num_char / CHARACTERS_PER_TOKEN)
 
 
-def generate_json_response(
-    model: str, prompt: str, data_model: T, *, trials: int = 5
-) -> T | None:
-    for trial in range(trials):
-        response: str = ollama.generate(
-            model=model, prompt=prompt, options={"temperature": 0.1}
-        )["response"]
-        logger.info(f"Raw response (trial={trial}):\n{response}")
-        # clip comments before or after the json
-        try:
-            clipped = response[response.index("{") : response.rindex("}") + 1]
-            return data_model.model_validate(clipped)
-        except Exception as e:
-            logger.error("JSON parsing failed (trial={trial}):", e)
-    return None
-
-
 def remove_last_sentence(s: str) -> str:
     index = len(s)
     trailing = ""

@@ -37,54 +37,80 @@ class Character(BaseModel):
     notes: LongString = ""
 
 
-class Memory(BaseModel):
-    messages: list[Message] = []
+class Location(BaseModel):
+    name: str
+    description: str
+    notes: str
+
+
+class CharacterList(BaseModel):
     characters: list[Character] = []
+
+
+class LocationList(BaseModel):
+    locations: list[Location] = []
+
+
+class Memory(CharacterList, LocationList):
+    messages: list[Message] = []
     story: LongString = ""
     world: LongString = ""
     characters2: LongString = ""
 
 
+class Colors(BaseModel):
+    user: ColorString = "#f8f8f8"
+    assistant: ColorString = "#e6f5ff"
+    em: ColorString = "#034f84"
+
+
+class Font(BaseModel):
+    family: FontString = "Arial"
+    size: Annotated[int, Interval(ge=1, le=100)] = 11
+
+    def qfont(self):
+        return QtGui.QFont(self.family, self.size)
+
+
 class Settings(BaseModel):
     session: Annotated[str, "noconfig"] = ""
     geometry: Annotated[tuple[int, int, int, int], "noconfig"] = (100, 100, 600, 600)
-    font: FontString = "Arial"
-    font_size: Annotated[int, Interval(ge=1, le=100)] = 11
-    user_color: ColorString = "#f8f8f8"
-    assistant_color: ColorString = "#e6f5ff"
-    em_color: ColorString = "#034f84"
+    font: Font = Font()
+    colors: Colors = Colors()
     llm_timeout: str = "1h"
     context_margin_fraction: Annotated[int, Interval(ge=0, le=100)] = 15
-    story_prompt: LongString = """Analyze the text within <text> tags and continue a story summary further below.
+    story_prompt: LongString = """Given a summary in `<summary>` tags and a chat in `<chat>` tags, please extend the summary with new paragraphs.
 
-<text>
+<summary>
+{summary}
+</summary>
+
+<chat>
 {dialog}
-</text>
+</chat>
 
 # Task Requirements
 
-Extract essential details from the provided narrative, focusing on long-term significance rather than transient information.
-Give equal attention to the entire text, not just the last part.
+Continue the summary based on the information provided in the chat.
 
-Continue the summary that is given below. Only return the new paragraphs that extend the summary and nothing else.
+# Response format
 
-# Story summary
-
-{story}
+Only return the new paragraphs that should be added to the summary and nothing else, please.
+Do not repeat anything that is already covered by the summary and do not rephrase the summary.
 """
 
-    characters_prompt: LongString = """Analyze the text within `<text>` tags and extract key information from the story.
-    
-<text>
-{0}
-</text>
+    characters_prompt: LongString = """Analyze the chat within `<chat>` tags and extract key information about characters.
+
+<chat>
+{dialog}
+</chat>
 
 # Task Requirements
 
-Extract essential details from the provided narrative, focusing on long-term significance rather than transient information.
-Give equal attention to the entire text, not just the last part.
+Extract essential details about characters mentioned in the provided narrative. Focus on long-term significance rather than transient information.
+Give equal attention to the entire chat, not just the last part.
 
-1. List all characters mentioned in the story, either directly or indirectly.
+1. List all characters mentioned in the chat, either directly or indirectly.
 
 2. Character descriptions to pay attention to:
     - Name of the character
@@ -98,7 +124,7 @@ Give equal attention to the entire text, not just the last part.
 
 # Response Format
 
-Return extracted facts in JSON format, leave a field black if no information is provided in the text:
+Please return the extracted character information in JSON format and assign an empty string ("") to a field if no information is provided in the text:
 
 {{
     "characters": [
@@ -117,11 +143,37 @@ Return extracted facts in JSON format, leave a field black if no information is 
 }}
 """
 
-    world_prompt: LongString = """Analyze the text within `<text>` tags and extract key information from the story.
+    locations_prompt: LongString = """Analyze the chat within `<chat>` tags and extract key information about locations.
+
+<chat>
+{dialog}
+</chat>
+
+# Task Requirements
+
+Extract essential details about all locations mentioned in the provided narrative.
+Give equal attention to the entire chat, not just the last part.
+
+# Response Format
+
+Please return the extracted locations in JSON format and assign an empty string ("") to a field if no information is provided in the text:
+
+{{
+    "locations": [
+        {{
+            "name": "name of location",
+            "description": "description of location",
+            "notes": "notes about the location, for example, its relevance in the story, major events that happened there, etc."
+        }}
+    ]
+}}
+"""
+
+    world_prompt: LongString = """Analyze the chat within `<chat>` tags and extract key information from the story.
     
-<text>
-{0}
-</text>
+<chat>
+{dialog}
+</chat>
 
 # Task Requirements
 
@@ -132,21 +184,9 @@ Extract information about world-building:
 
 - Realm (real world, fantasy world, or sci-fi world)
 - Timeframe (era, period, or specific date)
-- Genre (adventure, horror, mystery, fantasy, etc.) and tone (gritty, light-hearted, mature etc.)
-- Locations visited in the story with brief descriptions
+- Any information about the world in the story and its (physical or magical) laws
 
 # Response Format
 
-Return extracted facts in Markdown format:
-
-- Realm: ...
-- Timeframe: ... 
-- Genre and tone: ...
-- Important locations
-  - Place 1: ...
-  - Place 2: ...
-  - ...
+Please return the extracted information normal in prose.
 """
-
-    def qfont(self):
-        return QtGui.QFont(self.font, self.font_size)

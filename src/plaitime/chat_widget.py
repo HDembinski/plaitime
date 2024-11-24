@@ -8,8 +8,8 @@ from PySide6 import (
 )
 from .util import remove_last_sentence
 from .parser import parse as html
-from .data_models import Message, Settings
-from .text_edit import TextEdit
+from .data_models import Message, Colors
+from .text_edit import InputTextEdit
 import logging
 
 logger = logging.getLogger(__name__)
@@ -95,7 +95,7 @@ class EditDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("Edit message")
 
-        self.text_edit = TextEdit(self)
+        self.text_edit = InputTextEdit(self)
         self.text_edit.set_text(text)
         self.text_edit.sendMessage.connect(self.handle_message)
 
@@ -132,13 +132,13 @@ class WebBridge(QtCore.QObject):
 
 
 class ChatArea(QtWebEngineWidgets.QWebEngineView):
-    _settings: Settings
+    colors: Colors
     messages: list[MessageView]
 
-    def __init__(self, settings: Settings, parent=None):
+    def __init__(self, colors: Colors, parent=None):
         super().__init__(parent)
         self.setContextMenuPolicy(QtGui.Qt.ContextMenuPolicy.NoContextMenu)
-        self._settings = settings
+        self.colors = colors
         self.messages = []
 
         # Web channel setup
@@ -183,15 +183,15 @@ class ChatArea(QtWebEngineWidgets.QWebEngineView):
             width: auto;
             background-color: #AEAEAE;
             margin: 3px;
-            font-family: {self._settings.font};
-            font-size: {self._settings.font_size}pt;
+            font-family: {self.font().family()};
+            font-size: {self.font().pointSize()}pt;
         }}
         .user {{
-            background-color: {self._settings.user_color};
+            background-color: {self.colors.user};
             margin-left: 50px;
         }}
         .assistant {{
-            background-color: {self._settings.assistant_color};
+            background-color: {self.colors.assistant};
             margin-right: 50px;
         }}
         .thinking {{
@@ -199,10 +199,10 @@ class ChatArea(QtWebEngineWidgets.QWebEngineView):
         }}
         @keyframes pulse {{
         0% {{
-            background-color: {self._settings.assistant_color}; /* Color at the start */
+            background-color: {self.colors.assistant}; /* Color at the start */
         }}
         100% {{
-            background-color: {self._settings.user_color}; /* Color at the end */
+            background-color: {self.colors.user}; /* Color at the end */
         }}
         }}
         .mark {{
@@ -210,7 +210,7 @@ class ChatArea(QtWebEngineWidgets.QWebEngineView):
         }}
         em {{
             font-style: italic;
-            color: {self._settings.em_color};
+            color: {self.colors.em};
         }}
     </style>
 </head>
@@ -225,8 +225,8 @@ class ChatArea(QtWebEngineWidgets.QWebEngineView):
         self.loadFinished.connect(loop.quit)
         loop.exec()
 
-    def reload_style(self, settings: Settings):
-        self._settings = settings
+    def reload_style(self, colors: Colors):
+        self.colors = colors
         messages = [Message(role=m.role, content=m.content) for m in self.messages]
         self.clear()
         for m in messages:
@@ -236,20 +236,23 @@ class ChatArea(QtWebEngineWidgets.QWebEngineView):
 class ChatWidget(QtWidgets.QSplitter):
     sendMessage = QtCore.Signal()
 
-    def __init__(self, settings: Settings, parent):
+    def __init__(
+        self,
+        colors: Colors,
+        parent,
+    ):
         super().__init__(QtCore.Qt.Orientation.Vertical, parent)
-        self.setFont(settings.qfont())
-        self._chat_area = ChatArea(settings, self)
-        self._input_area = TextEdit(self)
+        self._chat_area = ChatArea(colors, self)
+        self._input_area = InputTextEdit(self)
         self.addWidget(self._chat_area)
         self.addWidget(self._input_area)
         self.setSizes([300, 100])
 
         self._input_area.sendMessage.connect(self.new_user_message)
 
-    def reload_style(self, settings: Settings):
-        self.setFont(settings.qfont())
-        self._chat_area.reload_style(settings)
+    def reload_style(self, font: QtGui.QFont, colors: Colors):
+        self.setFont(font)
+        self._chat_area.reload_style(colors)
 
     def clear(self):
         self._chat_area.clear()

@@ -12,52 +12,21 @@ from . import (
 )
 from .session_bar import SessionBar
 from .config_dialog import ConfigDialog
-from .data_models import Settings, Session, Memory, Message
-from .generator import Chat, Generate, GenerateJson
+from .data_models import Settings, Session, Memory, Message, CharacterList
+from .generator import Chat, Generate, GenerateData
 from .chat_widget import ChatWidget
 from .util import estimate_num_tokens, get_session_names
 from .io import load, save, lock_and_load, save_and_release, rename
-from .text_edit import BasicTextEdit
+from .text_edit import TextEditor
+from .character_widget import CharacterWidget
 
 logger = logging.getLogger(__name__)
-
-
-class TextEditor(QtWidgets.QWidget):
-    summaryClicked = QtCore.Signal()
-
-    def __init__(self, settings: Settings, parent=None):
-        super().__init__(parent)
-        self.edit = BasicTextEdit(self)
-        self.edit.setFont(settings.qfont())
-        self.button = QtWidgets.QPushButton("Generate", self)
-        self.button.clicked.connect(self.summaryClicked)
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.addWidget(self.edit)
-        layout.addWidget(self.button)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(3)
-
-    def text(self):
-        return self.edit.text()
-
-    def set_text(self, text: str):
-        self.edit.set_text(text)
-
-    def add_chunk(self, chunk: str):
-        self.edit.add_chunk(chunk)
-
-    def move_cursor_to_end(self):
-        self.edit.move_cursor_to_end()
-
-    def setEnabled(self, on: bool):
-        self.button.setEnabled(on)
-        self.edit.setReadOnly(not on)
 
 
 class MainWindow(QtWidgets.QMainWindow):
     settings: Settings
     session: Session
-    generator: Chat | Generate | None
+    generator: Chat | Generate | GenerateData | None
     cancel_mode: str
 
     def __init__(self, parent=None):
@@ -88,19 +57,27 @@ class MainWindow(QtWidgets.QMainWindow):
         self.session_bar.sessionChanged.connect(self.switch_session)
         self.session_bar.clipboard_button.clicked.connect(self.copy_to_clipboard)
 
-        self.chat_widget = ChatWidget(self.settings, self)
+        font = self.settings.font.qfont()
+        self.chat_widget = ChatWidget(
+            self.settings.colors,
+            self,
+        )
+        self.chat_widget.setFont(font)
         self.chat_widget.sendMessage.connect(self.generate_response)
-        self.story_widget = TextEditor(self.settings, self)
-        self.story_widget.summaryClicked.connect(self.generate_story)
-        self.characters_widget = TextEditor(self.settings, self)
-        # self.characters_widget.summaryClicked.connect(self.generate_character)
-        self.world_widget = TextEditor(self.settings, self)
-        self.world_widget.summaryClicked.connect(self.generate_world)
+        self.story_widget = TextEditor(self)
+        self.story_widget.setFont(font)
+        self.story_widget.generateClicked.connect(self.generate_story)
+        self.character_widget = CharacterWidget(self)
+        self.character_widget.setFont(font)
+        self.character_widget.generateClicked.connect(self.generate_characters)
+        self.world_widget = TextEditor(self)
+        self.world_widget.setFont(font)
+        self.world_widget.generateClicked.connect(self.generate_world)
 
         tab_widget = QtWidgets.QTabWidget(self)
         tab_widget.addTab(self.chat_widget, "Main")
         tab_widget.addTab(self.story_widget, "Story")
-        tab_widget.addTab(self.characters_widget, "Characters")
+        tab_widget.addTab(self.character_widget, "Characters")
         tab_widget.addTab(self.world_widget, "World")
         self.setCentralWidget(tab_widget)
 
@@ -130,15 +107,13 @@ class MainWindow(QtWidgets.QMainWindow):
             memory = Memory()
         self.chat_widget.load_messages(memory.messages)
         self.story_widget.set_text(memory.story)
-        self.story_widget.setFont(self.settings.qfont())
-        self.characters_widget.set_text(memory.characters2)
-        self.characters_widget.setFont(self.settings.qfont())
+        self.character_widget.characters = memory.characters
         self.world_widget.set_text(memory.world)
-        self.world_widget.setFont(self.settings.qfont())
         self.session_bar.set_num_token(self.estimate_num_tokens())
         # self.warmup_model()
 
     def save_session(self):
+        return
         c = self.session
         logger.info(f"saving session {c.name!r}")
         try:
@@ -150,7 +125,7 @@ class MainWindow(QtWidgets.QMainWindow):
         memory = Memory()
         memory.story = self.story_widget.text()
         memory.world = self.world_widget.text()
-        memory.characters2 = self.characters_widget.text()
+        memory.characters2 = self.character_widget.text()
 
         if c.save_conversation:
             widgets = self.chat_widget.messages
@@ -186,9 +161,12 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog = ConfigDialog(self.settings, parent=self)
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             self.settings = dialog.result()
-            # colors changed, we need to reload the web view
-            self.chat_widget.reload_style(self.settings)
-            self.story_widget.setFont(self.settings.qfont())
+            # colors or font changed, we need to reload the web view
+            font = self.settings.font.qfont()
+            self.chat_widget.reload_style(font, self.settings.colors)
+            self.story_widget.setFont(font)
+            self.character_widget.setFont(font)
+            self.world_widget.setFont(font)
 
     @QtCore.Slot()
     def configure_session(self, new_session: bool = False):
@@ -196,6 +174,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.session = Session()
             self.chat_widget.load_messages([])
             self.story_widget.set_text("")
+            self.character_widget.characters = []
+            self.world_widget.set_text("")
         dialog = ConfigDialog(self.session, parent=self)
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             session: Session = dialog.result()
@@ -324,7 +304,7 @@ class MainWindow(QtWidgets.QMainWindow):
             dialog=self.dialog_text(
                 window=True, include_world=True, include_story=False
             ),
-            story=self.story_widget.text(),
+            summary=self.story_widget.text(),
         )
         logger.debug(f"generate_story\n{prompt}")
 
@@ -345,7 +325,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @QtCore.Slot()
     def generate_world(self):
-        prompt = self.settings.world_prompt.format(self.dialog_text(window=True))
+        prompt = self.settings.world_prompt.format(dialog=self.dialog_text(window=True))
 
         self.cancel_generator(wait=True)
         self.cancel_mode = "cancel"
@@ -364,33 +344,36 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @QtCore.Slot()
     def generate_characters(self):
-        prompt = self.settings.characters_prompt.format(self.dialog_text(window=True))
+        prompt = self.settings.characters_prompt.format(
+            dialog=self.dialog_text(window=True)
+        )
 
         self.cancel_generator(wait=True)
         self.cancel_mode = "cancel"
-        self.generator = GenerateJson(
-            self.session.extraction_model,
+        self.generator = GenerateData(
+            CharacterList,
+            model=self.session.extraction_model,
             prompt=prompt,
             keep_alive=self.settings.llm_timeout,
             temperature=self.session.extraction_temperature,
         )
-        self.characters_widget.move_cursor_to_end()
-        self.characters_widget.setEnabled(False)
+        self.character_widget.setEnabled(False)
+        self.generator.nextChunk.connect(self.character_widget.add_chunk)
         self.generator.error.connect(self.show_error_message)
-        self.generator.finished.connect(self.generate_json_finished)
+        self.generator.finished.connect(self.generate_characters_finished)
         self.generator.start()
+
+    @QtCore.Slot()
+    def generate_characters_finished(self):
+        self.character_widget.integrate(self.generator.result)
+        self.generator = None
+        self.character_widget.setEnabled(True)
 
     @QtCore.Slot()
     def generate_finished(self):
         self.generator = None
         self.story_widget.setEnabled(True)
         self.world_widget.setEnabled(True)
-
-    @QtCore.Slot()
-    def generate_json_finished(self):
-        self.generator = None
-        # TODO handle JSON here
-        self.characters_widget.setEnabled(True)
 
     @QtCore.Slot(str)
     def show_error_message(self, message: str):

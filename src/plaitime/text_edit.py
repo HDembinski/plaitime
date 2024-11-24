@@ -1,6 +1,40 @@
 from PySide6 import QtWidgets, QtCore, QtGui
 
 
+class TextEditor(QtWidgets.QWidget):
+    generateClicked = QtCore.Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.edit = BasicTextEdit(self)
+        self.button = QtWidgets.QPushButton("Generate", self)
+        self.button.clicked.connect(self.generateClicked)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(self.edit)
+        layout.addWidget(self.button)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(3)
+
+    def text(self):
+        return self.edit.text()
+
+    def set_text(self, text: str):
+        self.edit.set_text(text)
+
+    def add_chunk(self, chunk: str):
+        self.edit.add_chunk(chunk)
+
+    def setEnabled(self, on: bool):
+        self.button.setEnabled(on)
+        self.edit.setReadOnly(not on)
+
+    def move_cursor_to_end(self):
+        self.edit.move_cursor_to_end()
+
+    def setFont(self, font: QtGui.QFont):
+        self.edit.setFont(font)
+
+
 class BasicTextEdit(QtWidgets.QTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -30,7 +64,7 @@ class BasicTextEdit(QtWidgets.QTextEdit):
         self.setTextCursor(cursor)
 
 
-class TextEdit(BasicTextEdit):
+class InputTextEdit(BasicTextEdit):
     sendMessage = QtCore.Signal(str)
 
     def __init__(self, parent=None):

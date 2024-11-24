@@ -3,6 +3,7 @@ from PySide6 import QtCore
 import logging
 from typing import Generator
 from .data_models import Message
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ class GeneratorThread(QtCore.QThread):
         self.options = options
         self.payload = payload
 
-    def run(self):
+    def chunks(self):
         try:
             for response in self._generator():
                 if self.interrupt:
@@ -34,7 +35,7 @@ class GeneratorThread(QtCore.QThread):
                     chunk = response["message"]["content"]
                 else:
                     chunk = response["response"]
-                self.nextChunk.emit(chunk)
+                yield chunk
         except Exception:
             import traceback
 
@@ -44,6 +45,10 @@ class GeneratorThread(QtCore.QThread):
 Please make sure that the model '{self.model}' is available.
 You can run 'ollama run {self.model}' in terminal to check."""
             self.error.emit(error_message)
+
+    def run(self):
+        for chunk in self.chunks():
+            self.nextChunk.emit(chunk)
 
     def _kwargs(self):
         return {
@@ -90,15 +95,32 @@ class Generate(GeneratorThread):
         yield from ollama.generate(**self._kwargs(), prompt=self.payload)
 
 
-class GenerateJson(GeneratorThread):
+class GenerateData(Generate):
+    result: BaseModel | None = None
+
     def __init__(
         self,
+        data_model: BaseModel,
         model: str,
         prompt: str,
         keep_alive: str,
+        retries: int = 5,
         **options: dict[str, str | int | float],
     ):
-        super().__init__(model, keep_alive, options, prompt)
+        super().__init__(model, prompt, keep_alive, options)
+        self.data_model = data_model
+        self.retries = retries
 
-    def _generator(self):
-        yield from ollama.generate(**self._kwargs(), prompt=self.payload)
+    def run(self):
+        for trial in range(self.retries):
+            response = ""
+            for chunk in self.chunks():
+                response += chunk
+                self.nextChunk.emit(chunk)
+            logger.info(f"Raw response (trial={trial}):\n{response}")
+            # clip comments before or after the json
+            try:
+                clipped = response[response.index("{") : response.rindex("}") + 1]
+                self.result = self.data_model.model_validate_json(clipped)
+            except Exception as e:
+                logger.warning("JSON parsing failed (trial={trial}):", e)
