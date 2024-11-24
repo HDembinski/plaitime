@@ -58,7 +58,8 @@ def make_widget_and_getter(
         gis = []
         for name, info in value.model_fields.items():
             wi, gi = make_widget_and_getter(info, getattr(value, name))
-            layout.addRow(name.replace("_", " ").capitalize(), wi)
+            if wi:
+                layout.addRow(name.replace("_", " ").capitalize(), wi)
             gis.append(gi)
 
         def g():
