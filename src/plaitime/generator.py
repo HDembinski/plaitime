@@ -104,7 +104,7 @@ class GenerateData(Generate):
         model: str,
         prompt: str,
         keep_alive: str,
-        retries: int = 5,
+        retries: int = 3,
         **options: dict[str, str | int | float],
     ):
         super().__init__(model, prompt, keep_alive, **options)
@@ -112,6 +112,7 @@ class GenerateData(Generate):
         self.retries = retries
 
     def run(self):
+        last_exc = None
         for trial in range(self.retries):
             response = ""
             for chunk in self.chunks():
@@ -124,6 +125,9 @@ class GenerateData(Generate):
             try:
                 clipped = response[response.index("{") : response.rindex("}") + 1]
                 self.result = self.data_model.model_validate_json(clipped)
-                return
+                return None
             except Exception as e:
-                logger.warning("JSON parsing failed (trial={trial}):", e)
+                last_exc = e
+                logger.warning(f"JSON parsing failed (trial={trial}): {e}")
+        if self.result is None:
+            self.error.emit(f"Parsing JSON failed, last error: {last_exc}")

@@ -365,7 +365,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @QtCore.Slot()
     def generate_characters_finished(self):
-        self.character_widget.integrate(self.generator.result.characters)
+        if self.generator.result:
+            self.character_widget.integrate(self.generator.result.characters)
         self.generator = None
         self.character_widget.setEnabled(True)
 

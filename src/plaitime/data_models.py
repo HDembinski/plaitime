@@ -56,7 +56,6 @@ class Memory(CharacterList, LocationList):
     messages: list[Message] = []
     story: LongString = ""
     world: LongString = ""
-    characters2: LongString = ""
 
 
 class Colors(BaseModel):

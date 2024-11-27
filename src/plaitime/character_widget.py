@@ -25,22 +25,23 @@ class Model(QtCore.QAbstractListModel):
         return None
 
     def format_character(self, character: Character) -> str:
-        return f"""
+        s = f"""
 <style>
 </style>
 <h2>{character.name}</h2>
 <table>
-    <tr><th>Eyes</th> <td>{character.eyes}</td></tr>
-    <tr><th>Hair</th> <td>{character.hair}</td></tr>
-    <tr><th>Age</th> <td>{character.age}</td></tr>
-    <tr><th>Appearance</th> <td>{character.appearance}</td></tr>
-    <tr><th>Clothing</th> <td>{character.clothing}</td></tr>
-    <tr><th>Occupation</th> <td>{character.occupation}</td></tr>
-    <tr><th>Weapons</th> <td>{character.weapons.replace("\n", "<br/>")}</td></tr>
-    <tr><th>Abilities</th> <td>{character.abilities.replace("\n", "<br/>")}</td></tr>
-    <tr><th>Notes</th> <td>{character.notes.replace("\n", "<br/>")}</td></tr>
-</table>
 """
+        for key, info in character.model_fields.items():
+            if key == "name":
+                continue
+            value = getattr(character, key)
+            if not value:
+                continue
+            if info.metadata == ["long"]:
+                value = value.replace("\n", "<br/>")
+            s += f"<tr><th>{key}</th> <td>{value}</td></tr>"
+        s += "</table>"
+        return s
 
 
 class HTMLDelegate(QtWidgets.QStyledItemDelegate):
@@ -148,14 +149,15 @@ class CharacterWidget(QtWidgets.QWidget):
                 old = self.characters[i]
                 dnew = new.model_dump()
                 for key, new_val in dnew.items():
+                    if key == "name":
+                        continue
                     old_val = getattr(old, key)
-                    if old_val and new_val:
+                    if old_val and new_val and new_val != old_val:
                         setattr(old, key, f"{old_val}; {new_val}")
                     elif new_val:
                         setattr(old, key, new_val)
                     else:
                         assert new_val == ""
-                self.characters[i] = old
 
         self.model.layoutChanged.emit()
 
