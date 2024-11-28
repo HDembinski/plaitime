@@ -47,10 +47,10 @@ class MainWindow(QtWidgets.QMainWindow):
         settings_action = QtGui.QAction("Settings", self)
         settings_action.triggered.connect(self.configure_settings)
         menu_bar.addAction(settings_action)
-        char_menu = menu_bar.addMenu("Character")
-        char_conf_action = char_menu.addAction("Configure")
-        char_new_action = char_menu.addAction("New")
-        char_del_action = char_menu.addAction("Delete")
+        session_menu = menu_bar.addMenu("Session")
+        char_conf_action = session_menu.addAction("Configure")
+        char_new_action = session_menu.addAction("New")
+        char_del_action = session_menu.addAction("Delete")
         char_conf_action.triggered.connect(self.configure_session)
         char_new_action.triggered.connect(self.new_session)
         char_del_action.triggered.connect(self.delete_session)
@@ -276,24 +276,32 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def enhanced_prompt(self):
         prompt = self.session.prompt
-        world = self.world_widget.text()
-        story = self.story_widget.text()
-        return "\n\n".join(x for x in (prompt, world, story) if x)
+        parts = (
+            ("Characters", self.character_widget.text()),
+            ("World", self.world_widget.text()),
+            ("Story", self.story_widget.text()),
+        )
+        enhancement = "\n\n".join(
+            f"# {title}\n\n{text}" for (title, text) in parts if text
+        )
+        return "\n\n".join((prompt, enhancement))
 
     def dialog_text(
         self,
         window: bool = False,
         include_world: bool = True,
         include_story: bool = True,
+        include_characters: bool = True,
     ):
         world = self.world_widget.text() if include_world else ""
         story = self.story_widget.text() if include_story else ""
+        characters = self.character_widget.text() if include_characters else ""
         dialog = "\n\n".join(
             f"{m.role.capitalize()}:\n{m.content}"
             for m in (self.context_window() if window else self.chat_widget.messages)
             if m.content
         )
-        return "\n\n".join(x for x in (world, story, dialog) if x)
+        return "\n\n".join(x for x in (world, characters, story, dialog) if x)
 
     @QtCore.Slot()
     def copy_to_clipboard(self):

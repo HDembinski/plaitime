@@ -21,27 +21,8 @@ class Model(QtCore.QAbstractListModel):
 
         character = self.characters[index.row()]
         if role == QtCore.Qt.ItemDataRole.DisplayRole:
-            return self.format_character(character)
+            return format_character(character)
         return None
-
-    def format_character(self, character: Character) -> str:
-        s = f"""
-<style>
-</style>
-<h2>{character.name}</h2>
-<table>
-"""
-        for key, info in character.model_fields.items():
-            if key == "name":
-                continue
-            value = getattr(character, key)
-            if not value:
-                continue
-            if info.metadata == ["long"]:
-                value = value.replace("\n", "<br/>")
-            s += f"<tr><th>{key}</th> <td>{value}</td></tr>"
-        s += "</table>"
-        return s
 
 
 class HTMLDelegate(QtWidgets.QStyledItemDelegate):
@@ -171,6 +152,43 @@ class CharacterWidget(QtWidgets.QWidget):
 
     def add_chunk(self, chunk: str):
         print(chunk, end="")
+
+    def text(self) -> str:
+        return "\n\n".join(format_character(c, format="md") for c in self.characters)
+
+
+def format_character(character: Character, format="html") -> str:
+    if format == "html":
+        prefix = f"<h2>{character.name}</h2><table>"
+        suffix = "</table>"
+
+        def short(key, val):
+            return f"<tr><th>{key}</th> <td>{val}</td></tr>"
+
+        def long(key, val):
+            return short(key, val.replace("\n", "<br/>"))
+    elif format == "md":
+        prefix = f"## {character.name}\n\n"
+        suffix = ""
+
+        def short(key, val):
+            return f"- {key}: {val}\n"
+
+        def long(key, val):
+            return f"- {key}: {val.replace("\n", "\n  ")}\n"
+    else:
+        raise ValueError(f"unknown format={format}")
+    s = prefix
+    for key, info in character.model_fields.items():
+        if key == "name":
+            continue
+        value = getattr(character, key)
+        if not value:
+            continue
+        tr = long if info.metadata == ["long"] else short
+        s += tr(key, value)
+    s += suffix
+    return s.strip()
 
 
 if __name__ == "__main__":

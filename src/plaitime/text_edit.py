@@ -15,7 +15,7 @@ class TextEditor(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(3)
 
-    def text(self):
+    def text(self) -> str:
         return self.edit.text()
 
     def set_text(self, text: str):
@@ -23,10 +23,6 @@ class TextEditor(QtWidgets.QWidget):
 
     def add_chunk(self, chunk: str):
         self.edit.add_chunk(chunk)
-
-    def setEnabled(self, on: bool):
-        self.button.setEnabled(on)
-        self.edit.setReadOnly(not on)
 
     def move_cursor_to_end(self):
         self.edit.move_cursor_to_end()
@@ -53,7 +49,7 @@ class BasicTextEdit(QtWidgets.QTextEdit):
         self.setTextCursor(cursor)
 
     def setEnabled(self, yes):
-        super().setEnabled(yes)
+        self.setReadOnly(not yes)
         if yes:
             self.setFocus()
 
