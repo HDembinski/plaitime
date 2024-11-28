@@ -311,9 +311,7 @@ class MainWindow(QtWidgets.QMainWindow):
     @QtCore.Slot()
     def generate_story(self):
         prompt = STORY_PROMPT.format(
-            dialog=self.dialog_text(
-                window=True, include_world=True, include_story=False
-            ),
+            dialog=self.dialog_text(window=True),
             summary=self.story_widget.text(),
         )
         logger.debug(f"generate_story\n{prompt}")
