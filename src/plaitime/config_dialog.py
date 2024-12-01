@@ -94,8 +94,8 @@ def make_widget_and_getter(
             g = w.toPlainText
         elif metadata == ["model"]:
             models = []
-            for item in ollama.list()["models"]:
-                models.append(item["name"])
+            for item in ollama.list().models:
+                models.append(item.model)
             w = QtWidgets.QComboBox()
             w.addItems(sorted(models))
             w.setCurrentText(value)

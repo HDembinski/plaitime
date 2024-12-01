@@ -428,10 +428,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
 def get_context_size(model):
     try:
-        d = ollama.show(model)["model_info"]
-        for key in d:
+        response = ollama.show(model)
+        info = response.modelinfo
+        for key in info:
             if "context_length" in key:
-                return d[key]
+                return info[key]
         raise RuntimeError("context_length not found")
         # model was removed
     except ResponseError:
